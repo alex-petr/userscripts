@@ -1,0 +1,28 @@
+name: check
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  userscripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Syntax check every userscript
+        run: |
+          shopt -s globstar nullglob
+          files=(**/*.user.js)
+          if [ ${#files[@]} -eq 0 ]; then echo "поки жодного скрипта — нічого перевіряти"; exit 0; fi
+          for f in "${files[@]}"; do
+            node --check "$f" && echo "  ok  $f"
+          done
+
+      - name: Validate userscript metadata block
+        run: node .github/scripts/check-metadata.mjs
