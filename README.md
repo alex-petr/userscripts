@@ -11,6 +11,14 @@ this README is bilingual.
 
 ## Scripts / Скрипти
 
+### [lostfilm-torrent-autopick](lostfilm-torrent-autopick/)
+
+Picks the highest available quality on the torrent selection page and follows
+the link, so the extra click disappears.
+
+Обирає найвищу доступну якість на сторінці вибору роздачі й переходить за
+посиланням — зайвий клік зникає.
+
 ---
 
 ## Install / Встановлення
