@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.7.1
+// @version      1.8.0
 // @author       Oleksandr Petrov
-// @description  Markdown-таблиці й чеклісти в описі, номер картки біля назви та на плитках дошки, пріоритет !N із підписом і бейдж Scrum Points
+// @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
 // @run-at       document-idle
 // @grant        none
@@ -96,78 +96,11 @@
     return null;
   };
 
-  // Номер біля назви у відкритій картці. Вставляємо ПЕРЕД полем назви,
-  // окремим рядком: назва — це <textarea>, і покласти щось усередину неї
-  // не можна.
-  const renderNumber = (titleNode, number) => {
-    const host = titleNode.parentElement;
-    if (!host || host.querySelector(`[${MARK}="number"]`)) return;
-
-    const tag = document.createElement("div");
-    tag.setAttribute(MARK, "number");
-    tag.textContent = `#${number}`;
-    tag.style.cssText = [
-      "font-size:12px", "line-height:16px", "font-weight:700",
-      "letter-spacing:.02em", "color:rgba(9,30,66,.45)", "margin-bottom:2px"
-    ].join(";");
-
-    host.insertBefore(tag, titleNode);
-  };
-
   // ── 2. Пріоритет !N і Scrum Points (N) ──────────────────────────────────
   const parseTitle = (text) => ({
     priority: (text.match(/!([1-5])\b/) || [])[1],
     points: (text.match(/\((\d+(?:[.,]\d+)?)\)/) || [])[1]
   });
-
-  const renderBadges = (titleNode, { priority, points }) => {
-    const host = titleNode.parentElement;
-    if (!host || host.querySelector(`[${MARK}="badges"]`)) return;
-    if (!priority && !points) return;
-
-    const box = document.createElement("div");
-    box.setAttribute(MARK, "badges");
-    box.style.cssText = "display:flex;align-items:center;gap:8px;margin:2px 0 6px";
-
-    if (priority) {
-      const { color, label } = PRIORITY[priority];
-      const chip = document.createElement("span");
-      chip.title = `Пріоритет !${priority}`;
-      chip.style.cssText = "display:inline-flex;align-items:center;gap:6px";
-
-      const stripe = document.createElement("span");
-      stripe.style.cssText = [
-        "display:inline-block", "width:46px", "height:8px",
-        "border-radius:4px", `background:${color}`
-      ].join(";");
-
-      const name = document.createElement("span");
-      name.textContent = label;
-      name.style.cssText = [
-        "font-size:12px", "line-height:18px", "font-weight:600",
-        "letter-spacing:.02em", `color:${color}`,
-        // жовтий і салатовий на білому тлі нечитабельні — їм даємо контур
-        priority === 3 || priority === 4 ? "text-shadow:0 0 1px rgba(9,30,66,.55)" : ""
-      ].filter(Boolean).join(";");
-
-      chip.append(stripe, name);
-      box.appendChild(chip);
-    }
-
-    if (points) {
-      const pill = document.createElement("span");
-      pill.title = "Story points";
-      pill.textContent = `⏱ ${points}`;
-      pill.style.cssText = [
-        "display:inline-block", "padding:0 8px", "border-radius:10px",
-        "font-size:12px", "line-height:18px", "font-weight:600",
-        "background:rgba(9,30,66,.08)", "color:#44546f"
-      ].join(";");
-      box.appendChild(pill);
-    }
-
-    host.insertBefore(box, titleNode);
-  };
 
   // ── 2b. Ті самі позначки в постійній панелі картки ─────────────────────
   // Липкий заголовок Trello показує назву лише при скролі, тож позначки в
@@ -406,13 +339,8 @@
     const title = cardBackTitle();
     if (!title) return;
 
-    const number = cardNumber();
-    if (number) renderNumber(title, number);
-
     const text = title.value || title.textContent || "";
-    const parsed = parseTitle(text);
-    renderBadges(title, parsed);
-    renderToolbarBadges({ number, ...parsed });
+    renderToolbarBadges({ number: cardNumber(), ...parseTitle(text) });
 
     const description = descriptionRoot();
     renderTables(description);
