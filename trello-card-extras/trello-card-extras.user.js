@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.18.1
+// @version      1.19.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.18.1";
+  const VERSION = "1.19.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -325,28 +325,6 @@
         white-space: nowrap !important;
         overflow: hidden !important;
       }
-      /* Номер у лівому нижньому куті лягав на іконку «спостерігаю» (око) —
-         перший бейдж рядка [data-testid="card-front-badges"]. Виміряно:
-         бейджі починаються за 17px від краю плитки, тризначний номер
-         закінчується на 38px, тож 26px відступу дають ~5px просвіту.
-         Ціна: на плитках із багатьма бейджами рядок частіше переноситься
-         (2 → 7 із 20 у вимірі) — але перенос виглядає охайно, бо відступ
-         діє на ОБИДВА рядки і номер лишається у вільному куті.
-         :has-сторожа лишаємо: якщо номер не намалювався, відступ не потрібен.
-         Бейджі є лише у повністю гідратованих плиток (testid="trello-card");
-         «minimal-card» рядка бейджів не має, і там правило просто не влучає. */
-      li[data-testid="list-card"]:has([${MARK}="tile-number"]) [data-testid="card-front-badges"] {
-        padding-left: 26px;
-      }
-      /* Вирівнювання по центру рядка бейджів: бейдж 24px стоїть із відступом
-         8px від низу, тож центр — на 20px; номер 16px має стояти на bottom:12,
-         інакше «прилипає» до самого низу й випадає з рядка. Правило діє лише
-         на плитках, де рядок бейджів Є: на «голих» (minimal-card і картки без
-         бейджів) номер лишається в кутку на bottom:0 з інлайнового стилю —
-         звідси й !important, бо інлайн інакше переміг би. */
-      li[data-testid="list-card"]:has([data-testid="card-front-badges"]) [${MARK}="tile-number"] {
-        bottom: 12px !important;
-      }
       input[${MARK}="task-box"] {
         margin: 0 6px 0 0;
         vertical-align: -1px;
@@ -568,14 +546,24 @@
     renderChecklists(description);
   };
 
+  // Планувальник навмисно має ДВА тригери. requestAnimationFrame у фоновій
+  // вкладці не викликається взагалі — прапорець `scheduled` лишався б
+  // піднятим назавжди, і скрипт замовкав до повернення фокуса. Саме тому
+  // номери на плитках то з'являлись, то ні. `run` ідемпотентний: він
+  // працює лише поки прапорець піднятий, тож подвійний виклик безпечний.
   let scheduled = false;
+
+  const run = () => {
+    if (!scheduled) return;
+    scheduled = false;
+    try { apply(); } catch (error) { console.warn("[card-extras]", error); }
+  };
+
   const schedule = () => {
     if (scheduled) return;
     scheduled = true;
-    requestAnimationFrame(() => {
-      scheduled = false;
-      try { apply(); } catch (error) { console.warn("[card-extras]", error); }
-    });
+    requestAnimationFrame(run);
+    setTimeout(run, 200);
   };
 
   // Спостерігати треба за <html>, а не за <body>: Trello — SPA, і при
