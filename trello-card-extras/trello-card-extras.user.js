@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.6.0
+// @version      1.7.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки біля назви та на плитках дошки, пріоритет !N із підписом і бейдж Scrum Points
 // @match        https://trello.com/*
@@ -169,39 +169,44 @@
     host.insertBefore(box, titleNode);
   };
 
-  // ── 2b. Ті самі позначки в липкому заголовку ────────────────────────────
-  // При скролі довгої картки шапка з назвою лишається зверху, а номер і
-  // пріоритет ідуть угору разом з описом. Дублюємо їх компактно всередину
-  // <hgroup> перед заголовком: він flex, тож позначки стають ліворуч.
-  const renderStickyHeader = ({ number, priority, points }) => {
-    const header = document.querySelector('[data-testid="card-back-sticky-header"]');
-    if (!header || header.querySelector(`[${MARK}="sticky"]`)) return;
+  // ── 2b. Ті самі позначки в постійній панелі картки ─────────────────────
+  // Липкий заголовок Trello показує назву лише при скролі, тож позначки в
+  // ньому половину часу невидимі. Кладемо їх у верхню панель — рядок із
+  // кнопкою списку («🚧 In Progress») і «Start timer»: він на місці завжди.
+  //
+  // Класи Trello хешовані й змінюються з кожним деплоєм, тож ціль шукаємо
+  // структурно: єдиний <header> картки (не липкий) → рядок його кнопки.
+  const renderToolbarBadges = ({ number, priority, points }) => {
     if (!number && !priority && !points) return;
 
-    const hgroup = header.querySelector("hgroup") || header;
+    const header = [...document.querySelectorAll("header")].find(
+      (node) => !node.closest('[data-testid="card-back-sticky-header"]') && node.querySelector("button")
+    );
+    const row = header?.querySelector("button")?.closest("div");
+    if (!row || row.querySelector(`[${MARK}="toolbar"]`)) return;
+
     const box = document.createElement("span");
-    box.setAttribute(MARK, "sticky");
-    box.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin-right:8px;flex:none";
+    box.setAttribute(MARK, "toolbar");
+    box.style.cssText = "display:inline-flex;align-items:center;gap:6px;flex:none";
 
     if (number) {
       const tag = document.createElement("span");
       tag.textContent = `#${number}`;
-      tag.style.cssText = "font-size:12px;font-weight:700;color:rgba(9,30,66,.45)";
+      tag.style.cssText = "font-size:12px;font-weight:700;color:rgba(9,30,66,.5)";
       box.appendChild(tag);
     }
 
     if (priority) {
       const { color, label } = PRIORITY[priority];
       const chip = document.createElement("span");
-      chip.title = `Пріоритет !${priority} — ${label}`;
+      chip.title = `Пріоритет !${priority}`;
       chip.textContent = label;
       chip.style.cssText = [
-        "font-size:11px", "line-height:16px", "font-weight:700",
-        "padding:0 6px", "border-radius:8px", "color:#fff",
-        `background:${color}`,
-        // жовтий і салатовий: білий текст на них не читається
-        priority === 3 || priority === 4 ? "color:#172b4d" : ""
-      ].filter(Boolean).join(";");
+        "font-size:11px", "line-height:18px", "font-weight:700",
+        "padding:0 7px", "border-radius:9px", `background:${color}`,
+        // на жовтому й салатовому білий текст не читається
+        `color:${priority === 3 || priority === 4 ? "#172b4d" : "#fff"}`
+      ].join(";");
       box.appendChild(chip);
     }
 
@@ -210,14 +215,14 @@
       pill.title = "Story points";
       pill.textContent = `⏱ ${points}`;
       pill.style.cssText = [
-        "font-size:11px", "line-height:16px", "font-weight:600",
-        "padding:0 6px", "border-radius:8px",
+        "font-size:11px", "line-height:18px", "font-weight:600",
+        "padding:0 7px", "border-radius:9px",
         "background:rgba(9,30,66,.08)", "color:#44546f"
       ].join(";");
       box.appendChild(pill);
     }
 
-    hgroup.insertBefore(box, hgroup.firstChild);
+    row.appendChild(box);
   };
 
   // ── 3. Markdown-таблиці ─────────────────────────────────────────────────
@@ -400,7 +405,7 @@
     const text = title.value || title.textContent || "";
     const parsed = parseTitle(text);
     renderBadges(title, parsed);
-    renderStickyHeader({ number, ...parsed });
+    renderToolbarBadges({ number, ...parsed });
 
     const description = descriptionRoot();
     renderTables(description);
