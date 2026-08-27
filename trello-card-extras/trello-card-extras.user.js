@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.23.0
+// @version      1.23.1
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.23.0";
+  const VERSION = "1.23.1";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -365,6 +365,12 @@
       // батьківський <ul> отримував мітку "task-list" для CSS, через що
       // всі наступні пункти списку вважались обробленими й пропускались.
       if (node.closest(`[${MARK}="table-wrap"]`)) return;
+      // <li> містить <p>, і обидва підходять під селектор. Пропускаємо
+      // вкладений, якщо предок уже став пунктом, — інакше на кожному рядку
+      // з'являлось ДВА чекбокси. Перевіряємо саме предків, а не closest від
+      // самого вузла: closest знайшов би й позначку "task-list" на списку.
+      if (node.parentElement?.closest(`[${MARK}="task"]`)) return;
+      if (node.querySelector(`input[${MARK}="task-box"]`)) return;
 
       const text = node.textContent || "";
       const match = text.match(TASK_PREFIX);
