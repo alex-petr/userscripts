@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.16.1
+// @version      1.17.2
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.16.1";
+  const VERSION = "1.17.2";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -122,6 +122,9 @@
 
     const box = document.createElement("span");
     box.setAttribute(MARK, "toolbar");
+    // Версія в підказці: щоб побачити, ЯКА збірка працює, достатньо навести
+    // мишу на позначки — без консолі й здогадок.
+    box.title = `Trello Card Extras v${VERSION}`;
     box.style.cssText = "display:inline-flex;align-items:center;gap:6px;flex:none";
 
     if (number) {
@@ -284,6 +287,14 @@
     // зараз виконується — Tampermonkey цього не показує сторінці.
     style.dataset.version = VERSION;
     style.textContent = `
+      /* Відступ під маркери в чеклісті не потрібен — маркерів там немає.
+         Знімаємо його ЛИШЕ у списків із нашими пунктами: у звичайних
+         марковані крапки без відступу вилізли б за край. */
+      [${MARK}="task-list"] {
+        padding-left: 4px !important;
+        padding-inline-start: 4px !important;
+        margin-left: 0 !important;
+      }
       li[${MARK}="task"] { list-style: none !important; }
       li[${MARK}="task"]::marker { content: "" !important; }
       li[${MARK}="task"]::before { content: none !important; }
@@ -341,7 +352,13 @@
 
       const checked = match[1].toLowerCase() === "x";
       node.setAttribute(MARK, "task");
-      if (node.tagName === "LI") node.style.listStyle = "none";
+      if (node.tagName === "LI") {
+        node.style.listStyle = "none";
+        // Позначка на самому списку — щоб CSS зняв відступ саме тут, а не
+        // в усіх ul опису. Через атрибут, а не :has(), бо так відкат
+        // лишається таким же простим, як і решта наших змін.
+        node.parentElement?.setAttribute(MARK, "task-list");
+      }
 
       // Як у GitHub: справжній вимкнений <input>, а не гліф. Дає рідний
       // вигляд у обох темах, коректний відступ і читається скрінрідером.
@@ -463,6 +480,8 @@
     document.querySelectorAll(`[${MARK}="raw-prefix"]`).forEach((node) => {
       node.replaceWith(...node.childNodes);
     });
+
+    document.querySelectorAll(`[${MARK}="task-list"]`).forEach((node) => node.removeAttribute(MARK));
 
     document.querySelectorAll(`[${MARK}="task"]`).forEach((node) => {
       node.style.listStyle = "";
