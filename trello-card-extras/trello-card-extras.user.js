@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.20.1
+// @version      1.21.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.20.1";
+  const VERSION = "1.21.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -450,23 +450,35 @@
 
       if (getComputedStyle(tile).position === "static") tile.style.position = "relative";
 
-      // Якщо в правому нижньому куті сидить аватарка виконавця —
-      // відсуваємо номер ліворуч від неї, а не поверх.
+      // Правий нижній кут може бути зайнятий аватаркою виконавця. Не
+      // вгадуємо її за класом — міряємо: беремо все, що впритул до правого
+      // краю нижньої смуги й розміром зі значок, і стаємо ЛІВІШЕ.
       const box = tile.getBoundingClientRect();
-      const avatar = [...tile.querySelectorAll('img, [role="img"], [data-testid*="member"]')].find((node) => {
+      const blockers = [...tile.querySelectorAll("*")].filter((node) => {
         const rect = node.getBoundingClientRect();
-        return box.right - rect.right < 16 && box.bottom - rect.bottom < 40 && rect.width > 12;
+        return rect.width >= 14 && rect.width <= 48
+          && rect.height >= 14 && rect.height <= 48
+          && (box.bottom - rect.bottom) < 34
+          && (box.right - rect.right) < 20;
       });
+      const edge = blockers.reduce((min, node) => Math.min(min, node.getBoundingClientRect().left), Infinity);
+      const right = Number.isFinite(edge) ? Math.round(box.right - edge) + 6 : 8;
 
       const tag = document.createElement("span");
       tag.setAttribute(MARK, "tile-number");
       tag.textContent = match[1];
+      // z-index навмисно великий: плитка створює власний контекст накладання,
+      // і з z-index:1 номер малювався ПІД вмістом картки — його не було видно,
+      // хоча у DOM він був. Заливка потрібна з тієї ж причини, що й у панелі:
+      // сірий текст на темній плитці не читався.
       tag.style.cssText = [
-        "position:absolute", "bottom:6px", `right:${avatar ? 42 : 8}px`, "z-index:1",
-        "font-size:11px", "line-height:14px", "font-weight:700",
-        "letter-spacing:.02em", "pointer-events:none",
-        "color:var(--ds-text-subtle,rgba(9,30,66,.45))",
-        "text-shadow:0 0 3px var(--ds-surface,#fff),0 0 3px var(--ds-surface,#fff)"
+        "position:absolute", "bottom:6px", `right:${right}px`,
+        "z-index:9999", "pointer-events:none",
+        "font-size:11px", "line-height:16px", "font-weight:700",
+        "padding:0 6px", "border-radius:8px",
+        "background:var(--ds-background-neutral-bold,#44546f)",
+        "color:var(--ds-text-inverse,#fff)",
+        "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
 
       tile.appendChild(tag);
