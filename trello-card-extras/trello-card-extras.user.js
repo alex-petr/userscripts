@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.22.1
+// @version      1.23.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.22.1";
+  const VERSION = "1.23.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -360,7 +360,11 @@
     {
       if (node.getAttribute(MARK) === "task") return;
       if (node.closest("pre, code")) return;
-      if (node.closest(`[${MARK}]`)) return;
+      // Пропускаємо лише те, що всередині НАШИХ згенерованих блоків.
+      // Раніше тут стояв closest(`[${MARK}]`) — і після першого ж пункту
+      // батьківський <ul> отримував мітку "task-list" для CSS, через що
+      // всі наступні пункти списку вважались обробленими й пропускались.
+      if (node.closest(`[${MARK}="table-wrap"]`)) return;
 
       const text = node.textContent || "";
       const match = text.match(TASK_PREFIX);
@@ -463,7 +467,7 @@
       // Заливка з тієї ж причини, що й у панелі: сірий текст на темній
       // плитці не читався.
       tag.style.cssText = [
-        "position:absolute", "bottom:6px", "left:8px",
+        "position:absolute", "bottom:0", "left:8px",
         "z-index:9999", "pointer-events:none",
         "font-size:11px", "line-height:16px", "font-weight:700",
         "padding:0 6px", "border-radius:8px",
