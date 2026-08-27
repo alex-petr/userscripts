@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.26.0
+// @version      1.27.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.26.0";
+  const VERSION = "1.27.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -375,6 +375,15 @@
          «minimal-card» рядка бейджів не має, і там правило просто не влучає. */
       li[data-testid="list-card"]:has([${MARK}="tile-number"]) [data-testid="card-front-badges"] {
         padding-left: 26px;
+      }
+      /* Вирівнювання по центру рядка бейджів: бейдж 24px стоїть із відступом
+         8px від низу, тож центр — на 20px; номер 16px має стояти на bottom:12,
+         інакше «прилипає» до самого низу й випадає з рядка. Правило діє лише
+         на плитках, де рядок бейджів Є: на «голих» (minimal-card і картки без
+         бейджів) номер лишається в кутку на bottom:0 з інлайнового стилю —
+         звідси й !important, бо інлайн інакше переміг би. */
+      li[data-testid="list-card"]:has([data-testid="card-front-badges"]) [${MARK}="tile-number"] {
+        bottom: 12px !important;
       }
       input[${MARK}="task-box"] {
         margin: 0 6px 0 0;
