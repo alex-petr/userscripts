@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.1.0
+// @version      1.5.0
 // @author       Oleksandr Petrov
-// @description  Markdown-таблиці й чеклісти в описі, номер картки біля назви, полоска пріоритету !N і бейдж Scrum Points у відкритій картці
+// @description  Markdown-таблиці й чеклісти в описі, номер картки біля назви та на плитках дошки, пріоритет !N із підписом і бейдж Scrum Points
 // @match        https://trello.com/*
 // @run-at       document-idle
 // @grant        none
@@ -46,33 +46,54 @@
   );
 
   const cardBackDescription = () => pick(
+    '[data-testid="description-content-area"] .ak-renderer-document',
+    '[data-testid="description-content-area"]',
+    ".ak-renderer-document",
     '[data-testid="card-back-description"]',
-    ".js-desc-content",
-    ".description-content"
+    ".js-desc-content"
   );
+
+  // Trello перейменовує testid'и частіше, ніж хотілося б, тож коли жоден
+  // селектор не збігся — шукаємо за ВМІСТОМ: беремо діалог картки й
+  // віддаємо його цілком. Зайвого не зачепимо: обидва рендери працюють
+  // лише з вузлами, що справді схожі на таблицю або пункт чекліста.
+  const cardBackDialog = () => pick(
+    '[data-testid="card-back-dialog"]',
+    '[role="dialog"]',
+    ".card-detail-window",
+    ".window-overlay"
+  );
+
+  const descriptionRoot = () => cardBackDescription() || cardBackDialog();
 
   // ── 1. Номер картки ─────────────────────────────────────────────────────
   // Береться з URL (/c/<shortLink>/<НОМЕР>-<slug>), а не з DOM Trello —
   // тому не залежить від того, чи встиг відмалюватись інший розширювач.
+  const numberCache = new Map();
+
   const cardNumber = () => {
-    const match = location.pathname.match(/^\/c\/[^/]+\/(\d+)/);
-    return match ? match[1] : null;
-  };
+    const fromUrl = location.pathname.match(/^\/c\/[^/]+\/(\d+)/);
+    if (fromUrl) return fromUrl[1];
 
-  const renderNumber = (titleNode, number) => {
-    const host = titleNode.parentElement;
-    if (!host || host.querySelector(`[${MARK}="number"]`)) return;
+    // Відкриття картки з дошки лишає короткий URL без номера. Питаємо
+    // Trello тією ж сесією, що й сама сторінка; відповідь кешуємо, щоб
+    // не смикати API на кожен прохід рендера.
+    const short = location.pathname.match(/^\/c\/([^/?#]+)/);
+    if (!short) return null;
+    const key = short[1];
+    if (numberCache.has(key)) return numberCache.get(key);
 
-    const chip = document.createElement("span");
-    chip.setAttribute(MARK, "number");
-    chip.textContent = `#${number}`;
-    chip.style.cssText = [
-      "display:inline-block", "margin-right:8px", "padding:1px 7px",
-      "border-radius:4px", "font-weight:700", "font-size:13px",
-      "line-height:20px", "vertical-align:middle",
-      "background:rgba(9,30,66,.08)", "color:#44546f"
-    ].join(";");
-    host.insertBefore(chip, titleNode);
+    numberCache.set(key, null);
+    fetch(`/1/cards/${key}?fields=idShort`, { credentials: "include" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((card) => {
+        if (!card || !card.idShort) return;
+        numberCache.set(key, String(card.idShort));
+        apply();
+      })
+      .catch(() => {});
+
+    return null;
   };
 
   // ── 2. Пріоритет !N і Scrum Points (N) ──────────────────────────────────
@@ -92,13 +113,27 @@
 
     if (priority) {
       const { color, label } = PRIORITY[priority];
+      const chip = document.createElement("span");
+      chip.title = `Пріоритет !${priority}`;
+      chip.style.cssText = "display:inline-flex;align-items:center;gap:6px";
+
       const stripe = document.createElement("span");
-      stripe.title = `Пріоритет ${priority} — ${label}`;
       stripe.style.cssText = [
         "display:inline-block", "width:46px", "height:8px",
         "border-radius:4px", `background:${color}`
       ].join(";");
-      box.appendChild(stripe);
+
+      const name = document.createElement("span");
+      name.textContent = label;
+      name.style.cssText = [
+        "font-size:12px", "line-height:18px", "font-weight:600",
+        "letter-spacing:.02em", `color:${color}`,
+        // жовтий і салатовий на білому тлі нечитабельні — їм даємо контур
+        priority === 3 || priority === 4 ? "text-shadow:0 0 1px rgba(9,30,66,.55)" : ""
+      ].filter(Boolean).join(";");
+
+      chip.append(stripe, name);
+      box.appendChild(chip);
     }
 
     if (points) {
@@ -169,45 +204,41 @@
   // до списку рядків тексту.
   const blockLines = (node) => (node.innerText || "").split("\n").filter((l) => l.trim() !== "");
 
+  // Trello (редактор Atlassian) віддає весь markdown-абзац ОДНИМ <p>,
+  // де рядки розділені <br>. Тому таблицю шукаємо не між сусідніми
+  // блоками, а всередині тексту одного вузла.
   const renderTables = (root) => {
     if (!root) return;
 
-    const blocks = Array.from(root.children).filter((node) => {
-      // Код і цитати не чіпаємо: саме на цьому ламались готові розширення.
-      if (node.matches("pre, code, blockquote, table")) return false;
-      if (node.closest("pre, code")) return false;
-      return true;
+    root.querySelectorAll("p, div.ak-renderer-document > div").forEach((node) => {
+      if (node.getAttribute(MARK)) return;
+      if (node.closest("pre, code, table")) return;
+
+      const lines = (node.innerText || "").split("\n");
+      const start = lines.findIndex((line, i) =>
+        isRow(line) && isSeparator(lines[i + 1] || ""));
+      if (start === -1) return;
+
+      let end = start + 2;
+      while (end < lines.length && isRow(lines[end])) end += 1;
+
+      const before = lines.slice(0, start).join("\n").trim();
+      const after = lines.slice(end).join("\n").trim();
+
+      const fragment = document.createDocumentFragment();
+      if (before) fragment.appendChild(textBlock(before));
+      fragment.appendChild(buildTable(lines.slice(start, end)));
+      if (after) fragment.appendChild(textBlock(after));
+
+      node.replaceWith(fragment);
     });
+  };
 
-    let index = 0;
-    while (index < blocks.length) {
-      const lines = blockLines(blocks[index]);
-      const isTableStart = lines.length >= 2 && isRow(lines[0]) && isSeparator(lines[1]);
-
-      if (!isTableStart) {
-        // Випадок «кожен рядок окремим блоком»: збираємо підряд ті, що схожі на рядки.
-        const run = [];
-        let cursor = index;
-        while (cursor < blocks.length) {
-          const chunk = blockLines(blocks[cursor]);
-          if (!chunk.length || !chunk.every(isRow)) break;
-          run.push(blocks[cursor]);
-          cursor += 1;
-        }
-        const runLines = run.flatMap(blockLines);
-        if (run.length && runLines.length >= 2 && isSeparator(runLines[1])) {
-          run[0].replaceWith(buildTable(runLines));
-          run.slice(1).forEach((node) => node.remove());
-          index = cursor;
-          continue;
-        }
-        index += 1;
-        continue;
-      }
-
-      blocks[index].replaceWith(buildTable(lines));
-      index += 1;
-    }
+  const textBlock = (text) => {
+    const p = document.createElement("p");
+    p.setAttribute(MARK, "text");
+    p.innerHTML = text.split("\n").map(inline).join("<br>");
+    return p;
   };
 
   // ── 4. Чеклісти `- [ ] / - [x]` ─────────────────────────────────────────
@@ -223,6 +254,7 @@
     root.querySelectorAll("li, p").forEach((node) => {
       if (node.getAttribute(MARK) === "task") return;
       if (node.closest("pre, code")) return;
+      if (node.closest(`[${MARK}]`)) return;
 
       const text = node.textContent || "";
       const match = text.match(TASK_PREFIX);
@@ -259,6 +291,36 @@
   // ── Цикл ────────────────────────────────────────────────────────────────
   // Trello перемальовує картку сам (і Strelloids поверх нього), тож замість
   // одноразового запуску слухаємо зміни й щоразу перевіряємо, чи вже зроблено.
+  // ── 5. Номери карток на плитках дошки ───────────────────────────────────
+  // Номер уже є в href плитки (/c/<shortLink>/<НОМЕР>-<slug>), тож ні API,
+  // ні здогадок не потрібно. Малюємо накладенням: absolute + pointer-events
+  // none, щоб не зсувати текст назви й не роздувати плитку.
+  const renderTileNumbers = () => {
+    document.querySelectorAll('a[data-testid="card-name"]').forEach((tile) => {
+      if (tile.querySelector(`[${MARK}="tile-number"]`)) return;
+
+      const match = (tile.getAttribute("href") || "").match(/^\/c\/[^/]+\/(\d+)/);
+      if (!match) return;
+
+      if (getComputedStyle(tile).position === "static") tile.style.position = "relative";
+
+      const tag = document.createElement("span");
+      tag.setAttribute(MARK, "tile-number");
+      tag.textContent = match[1];
+      tag.style.cssText = [
+        "position:absolute", "top:2px", "right:4px", "z-index:1",
+        "font-size:11px", "line-height:14px", "font-weight:700",
+        "letter-spacing:.02em", "pointer-events:none",
+        "color:rgba(9,30,66,.38)",
+        // обведення світлом: номер лягає поверх тексту назви, і без нього
+        // на довгих заголовках цифри зливаються з літерами
+        "text-shadow:0 0 3px rgba(255,255,255,.9),0 0 3px rgba(255,255,255,.9)"
+      ].join(";");
+
+      tile.appendChild(tag);
+    });
+  };
+
   const apply = () => {
     const title = cardBackTitle();
     if (!title) return;
@@ -269,9 +331,10 @@
     const text = title.value || title.textContent || "";
     renderBadges(title, parseTitle(text));
 
-    const description = cardBackDescription();
+    const description = descriptionRoot();
     renderTables(description);
     renderChecklists(description);
+    renderTileNumbers();
   };
 
   let scheduled = false;
