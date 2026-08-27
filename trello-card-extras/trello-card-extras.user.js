@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.10.0
+// @version      1.12.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -125,7 +125,12 @@
     if (number) {
       const tag = document.createElement("span");
       tag.textContent = `#${number}`;
-      tag.style.cssText = "font-size:12px;font-weight:700;color:var(--ds-text-subtle,rgba(9,30,66,.5))";
+      tag.style.cssText = [
+        "font-size:11px", "line-height:18px", "font-weight:700",
+        "padding:0 7px", "border-radius:9px",
+        "background:var(--ds-background-neutral,rgba(9,30,66,.08))",
+        "color:var(--ds-text-subtle,#44546f)"
+      ].join(";");
       box.appendChild(tag);
     }
 
@@ -250,6 +255,27 @@
     return p;
   };
 
+  // Маркер списку малюється або ::marker, або ::before — інлайновим style
+  // до них не дістатись, тож кладемо правила окремим <style> один раз.
+  const ensureStyles = () => {
+    if (document.getElementById("card-extras-style")) return;
+
+    const style = document.createElement("style");
+    style.id = "card-extras-style";
+    style.textContent = `
+      li[${MARK}="task"] { list-style: none !important; }
+      li[${MARK}="task"]::marker { content: "" !important; }
+      li[${MARK}="task"]::before { content: none !important; }
+      input[${MARK}="task-box"] {
+        margin: 0 6px 0 0;
+        vertical-align: -1px;
+        accent-color: var(--ds-background-success-bold, #22a06b);
+        cursor: default;
+      }
+    `;
+    document.head.appendChild(style);
+  };
+
   // ── 4. Чеклісти `- [ ] / - [x]` ─────────────────────────────────────────
   // Trello рендерить «- текст» справжнім <li>, тож у розмітці лишається
   // сирий префікс «[ ]». Підміняємо його на позначку, сам пункт лишаємо
@@ -273,13 +299,14 @@
       node.setAttribute(MARK, "task");
       if (node.tagName === "LI") node.style.listStyle = "none";
 
-      const box = document.createElement("span");
-      box.textContent = checked ? "☑" : "☐";
-      box.style.cssText = [
-        "display:inline-block", "width:1.1em", "margin-right:4px",
-        "font-size:15px", "line-height:1",
-        `color:${checked ? "var(--ds-text-success,#22a06b)" : "var(--ds-text-subtlest,#8590a2)"}`
-      ].join(";");
+      // Як у GitHub: справжній вимкнений <input>, а не гліф. Дає рідний
+      // вигляд у обох темах, коректний відступ і читається скрінрідером.
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.disabled = true;
+      box.checked = checked;
+      box.setAttribute(MARK, "task-box");
+      box.setAttribute("aria-label", checked ? "Виконано" : "Не виконано");
 
       // Прибираємо префікс лише з першого текстового вузла — решта розмітки
       // (жирний, посилання, код усередині пункту) лишається недоторканою.
@@ -295,6 +322,9 @@
         ? node.firstElementChild
         : node;
       inlineHost.insertBefore(box, inlineHost.firstChild);
+      // Пробіл окремим вузлом: без нього текст злипається з чекбоксом при
+      // копіюванні («☑This»), навіть якщо візуально відступ є.
+      box.after(document.createTextNode(" "));
 
       if (checked) {
         node.style.color = "var(--ds-text-subtlest,#626f86)";
@@ -349,6 +379,13 @@
   };
 
   const apply = () => {
+    ensureStyles();
+
+    // Плитки дошки — незалежно від того, чи відкрита картка: раніше цей
+    // виклик стояв після `return` для закритої картки, тож у списку номери
+    // не малювались узагалі.
+    renderTileNumbers();
+
     const title = cardBackTitle();
     if (!title) return;
 
@@ -358,8 +395,8 @@
     const description = descriptionRoot();
     renderTables(description);
     renderChecklists(description);
-    renderTileNumbers();
   };
+;
 
   let scheduled = false;
   const schedule = () => {
