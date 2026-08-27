@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.23.1
+// @version      1.24.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.23.1";
+  const VERSION = "1.24.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -122,10 +122,22 @@
       (node) => !node.closest('[data-testid="card-back-sticky-header"]') && node.querySelector("button")
     );
     const row = header?.querySelector("button")?.closest("div");
-    if (!row || row.querySelector(`[${MARK}="toolbar"]`)) return;
+    if (!row) return;
+
+    // Позначки перемальовуються, щойно змінився їхній ВМІСТ: правку «!2 → !1»
+    // у назві видно одразу, без закриття картки. Порівнюємо підпис, а не
+    // просто наявність вузла — інакше рендер виходив би одразу й панель
+    // лишалася зі старим пріоритетом.
+    const signature = `${number || ""}|${priority || ""}|${points || ""}`;
+    const existing = row.querySelector(`[${MARK}="toolbar"]`);
+    if (existing) {
+      if (existing.dataset.tceSignature === signature) return;
+      existing.remove();
+    }
 
     const box = document.createElement("span");
     box.setAttribute(MARK, "toolbar");
+    box.dataset.tceSignature = signature;
     // Версія в підказці: щоб побачити, ЯКА збірка працює, достатньо навести
     // мишу на позначки — без консолі й здогадок.
     box.title = `Trello Card Extras v${VERSION}`;
