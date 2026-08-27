@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.5.0
+// @version      1.6.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки біля назви та на плитках дошки, пріоритет !N із підписом і бейдж Scrum Points
 // @match        https://trello.com/*
@@ -96,6 +96,24 @@
     return null;
   };
 
+  // Номер біля назви у відкритій картці. Вставляємо ПЕРЕД полем назви,
+  // окремим рядком: назва — це <textarea>, і покласти щось усередину неї
+  // не можна.
+  const renderNumber = (titleNode, number) => {
+    const host = titleNode.parentElement;
+    if (!host || host.querySelector(`[${MARK}="number"]`)) return;
+
+    const tag = document.createElement("div");
+    tag.setAttribute(MARK, "number");
+    tag.textContent = `#${number}`;
+    tag.style.cssText = [
+      "font-size:12px", "line-height:16px", "font-weight:700",
+      "letter-spacing:.02em", "color:rgba(9,30,66,.45)", "margin-bottom:2px"
+    ].join(";");
+
+    host.insertBefore(tag, titleNode);
+  };
+
   // ── 2. Пріоритет !N і Scrum Points (N) ──────────────────────────────────
   const parseTitle = (text) => ({
     priority: (text.match(/!([1-5])\b/) || [])[1],
@@ -149,6 +167,57 @@
     }
 
     host.insertBefore(box, titleNode);
+  };
+
+  // ── 2b. Ті самі позначки в липкому заголовку ────────────────────────────
+  // При скролі довгої картки шапка з назвою лишається зверху, а номер і
+  // пріоритет ідуть угору разом з описом. Дублюємо їх компактно всередину
+  // <hgroup> перед заголовком: він flex, тож позначки стають ліворуч.
+  const renderStickyHeader = ({ number, priority, points }) => {
+    const header = document.querySelector('[data-testid="card-back-sticky-header"]');
+    if (!header || header.querySelector(`[${MARK}="sticky"]`)) return;
+    if (!number && !priority && !points) return;
+
+    const hgroup = header.querySelector("hgroup") || header;
+    const box = document.createElement("span");
+    box.setAttribute(MARK, "sticky");
+    box.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin-right:8px;flex:none";
+
+    if (number) {
+      const tag = document.createElement("span");
+      tag.textContent = `#${number}`;
+      tag.style.cssText = "font-size:12px;font-weight:700;color:rgba(9,30,66,.45)";
+      box.appendChild(tag);
+    }
+
+    if (priority) {
+      const { color, label } = PRIORITY[priority];
+      const chip = document.createElement("span");
+      chip.title = `Пріоритет !${priority} — ${label}`;
+      chip.textContent = label;
+      chip.style.cssText = [
+        "font-size:11px", "line-height:16px", "font-weight:700",
+        "padding:0 6px", "border-radius:8px", "color:#fff",
+        `background:${color}`,
+        // жовтий і салатовий: білий текст на них не читається
+        priority === 3 || priority === 4 ? "color:#172b4d" : ""
+      ].filter(Boolean).join(";");
+      box.appendChild(chip);
+    }
+
+    if (points) {
+      const pill = document.createElement("span");
+      pill.title = "Story points";
+      pill.textContent = `⏱ ${points}`;
+      pill.style.cssText = [
+        "font-size:11px", "line-height:16px", "font-weight:600",
+        "padding:0 6px", "border-radius:8px",
+        "background:rgba(9,30,66,.08)", "color:#44546f"
+      ].join(";");
+      box.appendChild(pill);
+    }
+
+    hgroup.insertBefore(box, hgroup.firstChild);
   };
 
   // ── 3. Markdown-таблиці ─────────────────────────────────────────────────
@@ -329,7 +398,9 @@
     if (number) renderNumber(title, number);
 
     const text = title.value || title.textContent || "";
-    renderBadges(title, parseTitle(text));
+    const parsed = parseTitle(text);
+    renderBadges(title, parsed);
+    renderStickyHeader({ number, ...parsed });
 
     const description = descriptionRoot();
     renderTables(description);
