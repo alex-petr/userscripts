@@ -19,6 +19,16 @@ the link, so the extra click disappears.
 Обирає найвищу доступну якість на сторінці вибору роздачі й переходить за
 посиланням — зайвий клік зникає.
 
+### [trello-card-extras](trello-card-extras/)
+
+Makes Trello cards readable: markdown tables and task lists in descriptions,
+card numbers on board tiles, priority and story-point badges parsed from the
+card title. Works in light and dark themes.
+
+Робить картки Trello читабельними: markdown-таблиці й чеклісти в описі, номери
+карток на плитках дошки, значки пріоритету та story points із назви картки.
+Світла й темна теми.
+
 ---
 
 ## Install / Встановлення
