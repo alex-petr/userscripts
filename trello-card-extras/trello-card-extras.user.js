@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.25.0
+// @version      1.26.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.25.0";
+  const VERSION = "1.26.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -362,6 +362,19 @@
       [data-testid="list-header"] [data-testid="list-name-textarea"] {
         white-space: nowrap !important;
         overflow: hidden !important;
+      }
+      /* Номер у лівому нижньому куті лягав на іконку «спостерігаю» (око) —
+         перший бейдж рядка [data-testid="card-front-badges"]. Виміряно:
+         бейджі починаються за 17px від краю плитки, тризначний номер
+         закінчується на 38px, тож 26px відступу дають ~5px просвіту.
+         Ціна: на плитках із багатьма бейджами рядок частіше переноситься
+         (2 → 7 із 20 у вимірі) — але перенос виглядає охайно, бо відступ
+         діє на ОБИДВА рядки і номер лишається у вільному куті.
+         :has-сторожа лишаємо: якщо номер не намалювався, відступ не потрібен.
+         Бейджі є лише у повністю гідратованих плиток (testid="trello-card");
+         «minimal-card» рядка бейджів не має, і там правило просто не влучає. */
+      li[data-testid="list-card"]:has([${MARK}="tile-number"]) [data-testid="card-front-badges"] {
+        padding-left: 26px;
       }
       input[${MARK}="task-box"] {
         margin: 0 6px 0 0;
