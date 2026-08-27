@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.24.0
+// @version      1.25.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.24.0";
+  const VERSION = "1.25.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -115,6 +115,30 @@
   //
   // Класи Trello хешовані й змінюються з кожним деплоєм, тож ціль шукаємо
   // структурно: єдиний <header> картки (не липкий) → рядок його кнопки.
+  // Контрастний текст на довільному тлі — за формулою відносної яскравості
+  // WCAG. Рахуємо, а не тримаємо список винятків: якщо колір пріоритету
+  // колись зміниться, текст лишиться читабельним сам собою.
+  const DARK_INK = "#172b4d";
+
+  const luminance = (hex) => {
+    const parts = hex.replace("#", "").match(/../g).map((pair) => {
+      const value = parseInt(pair, 16) / 255;
+      return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2];
+  };
+
+  const contrast = (a, b) => {
+    const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (light + 0.05) / (dark + 0.05);
+  };
+
+  // Виміряно на поточній палітрі: білий проходить лише на червоному (5.07),
+  // на помаранчевому/жовтому/салатовому/блакитному він дає 1.2–2.2 — текст
+  // просто не читається.
+  const inkFor = (background) =>
+    contrast(background, "#ffffff") >= contrast(background, DARK_INK) ? "#fff" : DARK_INK;
+
   const renderToolbarBadges = ({ number, priority, points }) => {
     if (!number && !priority && !points) return;
 
@@ -166,8 +190,8 @@
       chip.style.cssText = [
         "font-size:14px", "line-height:22px", "font-weight:700",
         "padding:0 9px", "border-radius:11px", `background:${color}`,
-        // на жовтому й салатовому білий текст не читається
-        `color:${priority === 3 || priority === 4 ? "#172b4d" : "#fff"}`,
+        // колір тексту рахується за контрастом, а не задається списком
+        `color:${inkFor(color)}`,
         // обводка: на світлій обкладинці дошки заливка інакше зливається з фоном
         "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
