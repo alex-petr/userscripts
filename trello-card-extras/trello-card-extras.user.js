@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.19.0
+// @version      1.20.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.19.0";
+  const VERSION = "1.20.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -566,12 +566,32 @@
     setTimeout(run, 200);
   };
 
+  // «Доводка» після сплеску змін — прийом із Trello Card Numbers Plus:
+  // React домальовує плитки кількома хвилями, і одного проходу по мутації
+  // мало. Ганяємо рендер кожні 150 мс протягом 2 с після останньої події,
+  // потім замовкаємо. Рендери ідемпотентні, тож зайві проходи безкоштовні.
+  let settleTimer = null;
+  let settleStop = null;
+
+  const settle = () => {
+    if (!settleTimer) settleTimer = setInterval(run2, 150);
+    clearTimeout(settleStop);
+    settleStop = setTimeout(() => {
+      clearInterval(settleTimer);
+      settleTimer = null;
+    }, 2000);
+  };
+
+  const run2 = () => {
+    try { apply(); } catch (error) { console.warn("[card-extras]", error); }
+  };
+
   // Спостерігати треба за <html>, а не за <body>: Trello — SPA, і при
   // переходах вона перемонтовує кореневий контейнер. Підписка на body
   // після цього висить на вузлі, якого вже немає в документі, тож apply()
   // більше не викликається — саме тому номери на плитках дошки не
   // з'являлись, хоча сама функція працює.
-  new MutationObserver(schedule).observe(document.documentElement, {
+  new MutationObserver(() => { schedule(); settle(); }).observe(document.documentElement, {
     childList: true,
     subtree: true
   });
