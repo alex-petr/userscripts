@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.12.0
+// @version      1.16.1
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -14,6 +14,8 @@
 
 (() => {
   "use strict";
+
+  const VERSION = "1.16.1";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -126,10 +128,11 @@
       const tag = document.createElement("span");
       tag.textContent = `#${number}`;
       tag.style.cssText = [
-        "font-size:11px", "line-height:18px", "font-weight:700",
-        "padding:0 7px", "border-radius:9px",
-        "background:var(--ds-background-neutral,rgba(9,30,66,.08))",
-        "color:var(--ds-text-subtle,#44546f)"
+        "font-size:14px", "line-height:22px", "font-weight:700",
+        "padding:0 9px", "border-radius:11px",
+        "background:var(--ds-background-neutral-bold,#44546f)",
+        "color:var(--ds-text-inverse,#fff)",
+        "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
       box.appendChild(tag);
     }
@@ -140,10 +143,12 @@
       chip.title = `Пріоритет !${priority}`;
       chip.textContent = label;
       chip.style.cssText = [
-        "font-size:11px", "line-height:18px", "font-weight:700",
-        "padding:0 7px", "border-radius:9px", `background:${color}`,
+        "font-size:14px", "line-height:22px", "font-weight:700",
+        "padding:0 9px", "border-radius:11px", `background:${color}`,
         // на жовтому й салатовому білий текст не читається
-        `color:${priority === 3 || priority === 4 ? "#172b4d" : "#fff"}`
+        `color:${priority === 3 || priority === 4 ? "#172b4d" : "#fff"}`,
+        // обводка: на світлій обкладинці дошки заливка інакше зливається з фоном
+        "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
       box.appendChild(chip);
     }
@@ -153,9 +158,11 @@
       pill.title = "Story points";
       pill.textContent = `⏱ ${points}`;
       pill.style.cssText = [
-        "font-size:11px", "line-height:18px", "font-weight:600",
-        "padding:0 7px", "border-radius:9px",
-        "background:var(--ds-background-neutral,rgba(9,30,66,.08))", "color:var(--ds-text-subtle,#44546f)"
+        "font-size:14px", "line-height:22px", "font-weight:600",
+        "padding:0 9px", "border-radius:11px",
+        "background:var(--ds-background-neutral-bold,#44546f)",
+        "color:var(--ds-text-inverse,#fff)",
+        "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
       box.appendChild(pill);
     }
@@ -236,15 +243,26 @@
       let end = start + 2;
       while (end < lines.length && isRow(lines[end])) end += 1;
 
+      // Оригінальний вузол НЕ видаляємо — лише ховаємо. Редактор Atlassian
+      // піднімає вміст із DOM, тож підміна абзацу таблицею псувала джерело
+      // при переході в режим редагування. Ховання оборотне за один крок.
+      const table = buildTable(lines.slice(start, end));
+      table.setAttribute(MARK, "table");
+      table.setAttribute("contenteditable", "false");
+
       const before = lines.slice(0, start).join("\n").trim();
       const after = lines.slice(end).join("\n").trim();
+      const wrap = document.createElement("div");
+      wrap.setAttribute(MARK, "table-wrap");
+      wrap.setAttribute("contenteditable", "false");
+      if (before) wrap.appendChild(textBlock(before));
+      wrap.appendChild(table);
+      if (after) wrap.appendChild(textBlock(after));
 
-      const fragment = document.createDocumentFragment();
-      if (before) fragment.appendChild(textBlock(before));
-      fragment.appendChild(buildTable(lines.slice(start, end)));
-      if (after) fragment.appendChild(textBlock(after));
-
-      node.replaceWith(fragment);
+      node.setAttribute(MARK, "hidden-source");
+      node.dataset.cardExtrasDisplay = node.style.display || "";
+      node.style.display = "none";
+      node.after(wrap);
     });
   };
 
@@ -262,10 +280,36 @@
 
     const style = document.createElement("style");
     style.id = "card-extras-style";
+    // Версія в DOM: єдиний спосіб з консолі перевірити, ЯКА саме збірка
+    // зараз виконується — Tampermonkey цього не показує сторінці.
+    style.dataset.version = VERSION;
     style.textContent = `
       li[${MARK}="task"] { list-style: none !important; }
       li[${MARK}="task"]::marker { content: "" !important; }
       li[${MARK}="task"]::before { content: none !important; }
+      /* Шапки списків: назва в один рядок, лічильник і «…» праворуч.
+         Trello ставить header flex-wrap:wrap, і довга назва («🔍 Code Review /
+         🧪 QA / 🚀») переносила лічильник із меню на другий рядок, роздуваючи
+         шапку з 40 до 72px. Обрізаємо назву трикрапкою, повний текст —
+         у title при наведенні. */
+      [data-testid="list-header"] { flex-wrap: nowrap !important; }
+      [data-testid="list-header"] > div:has([data-testid="list-name"]) {
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      [data-testid="list-header"] [data-testid="list-name"],
+      [data-testid="list-header"] [data-testid="list-name"] button,
+      [data-testid="list-header"] [data-testid="list-name"] button > span {
+        display: block;
+        max-width: 100%;
+        white-space: nowrap !important;
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }
+      [data-testid="list-header"] [data-testid="list-name-textarea"] {
+        white-space: nowrap !important;
+        overflow: hidden !important;
+      }
       input[${MARK}="task-box"] {
         margin: 0 6px 0 0;
         vertical-align: -1px;
@@ -306,13 +350,24 @@
       box.disabled = true;
       box.checked = checked;
       box.setAttribute(MARK, "task-box");
+      box.setAttribute("contenteditable", "false");
       box.setAttribute("aria-label", checked ? "Виконано" : "Не виконано");
 
-      // Прибираємо префікс лише з першого текстового вузла — решта розмітки
-      // (жирний, посилання, код усередині пункту) лишається недоторканою.
+      // Префікс «[ ] » НЕ вирізаємо з тексту: редактор піднімає вміст із DOM,
+      // і видалений префікс зникав би з опису при першому ж редагуванні.
+      // Замість цього ховаємо його в окремий span — відкат за один крок.
       const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
       const first = walker.nextNode();
-      if (first) first.nodeValue = first.nodeValue.replace(TASK_PREFIX, "");
+      if (first) {
+        const raw = first.nodeValue.match(TASK_PREFIX)[0];
+        const rest = first.splitText(raw.length);
+        const hidden = document.createElement("span");
+        hidden.setAttribute(MARK, "raw-prefix");
+        hidden.style.display = "none";
+        first.replaceWith(hidden);
+        hidden.appendChild(first);
+        void rest;
+      }
 
       // Усередині <li> Atlassian-рендерер тримає <p> — блок. Якщо покласти
       // позначку перед ним, вона стане окремим рядком, тож ставимо її
@@ -378,6 +433,52 @@
     });
   };
 
+  // Повна назва списку — у title, бо видима частина тепер обрізана
+  const renderListTitles = () => {
+    document.querySelectorAll('[data-testid="list-name"]').forEach((node) => {
+      const text = (node.textContent || "").trim();
+      if (text && node.title !== text) node.title = text;
+    });
+  };
+
+  // ── Відкат: повертаємо опис до вихідного стану ──────────────────────────
+  // Викликається перед будь-яким редагуванням. Усі наші зміни оборотні:
+  // оригінальні вузли лише сховані, префікси загорнуті, вставлене — наше.
+  const cleanupDescription = () => {
+    document.querySelectorAll(`[${MARK}="table-wrap"]`).forEach((node) => node.remove());
+
+    document.querySelectorAll(`[${MARK}="hidden-source"]`).forEach((node) => {
+      node.style.display = node.dataset.cardExtrasDisplay || "";
+      delete node.dataset.cardExtrasDisplay;
+      node.removeAttribute(MARK);
+    });
+
+    document.querySelectorAll(`input[${MARK}="task-box"]`).forEach((node) => {
+      // разом із чекбоксом прибираємо доданий пробіл
+      const next = node.nextSibling;
+      if (next && next.nodeType === Node.TEXT_NODE && next.nodeValue === " ") next.remove();
+      node.remove();
+    });
+
+    document.querySelectorAll(`[${MARK}="raw-prefix"]`).forEach((node) => {
+      node.replaceWith(...node.childNodes);
+    });
+
+    document.querySelectorAll(`[${MARK}="task"]`).forEach((node) => {
+      node.style.listStyle = "";
+      node.style.color = "";
+      node.style.textDecoration = "";
+      node.removeAttribute(MARK);
+    });
+  };
+
+  // Редактор опису відкритий: рендерити не можна, і все наше має зникнути
+  const descriptionEditing = () => Boolean(
+    document.querySelector('[data-testid="description-editor"]')
+      || document.querySelector('[data-testid="description-content-area"] [contenteditable="true"]')
+      || document.querySelector(".ak-editor-content-area")
+  );
+
   const apply = () => {
     ensureStyles();
 
@@ -385,6 +486,7 @@
     // виклик стояв після `return` для закритої картки, тож у списку номери
     // не малювались узагалі.
     renderTileNumbers();
+    renderListTitles();
 
     const title = cardBackTitle();
     if (!title) return;
@@ -392,11 +494,17 @@
     const text = title.value || title.textContent || "";
     renderToolbarBadges({ number: cardNumber(), ...parseTitle(text) });
 
+    // Поки опис редагують — нічого не малюємо й прибираємо своє: інакше
+    // редактор підніме з DOM наші вставки замість вихідного тексту.
+    if (descriptionEditing()) {
+      cleanupDescription();
+      return;
+    }
+
     const description = descriptionRoot();
     renderTables(description);
     renderChecklists(description);
   };
-;
 
   let scheduled = false;
   const schedule = () => {
@@ -408,7 +516,30 @@
     });
   };
 
-  new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+  // Спостерігати треба за <html>, а не за <body>: Trello — SPA, і при
+  // переходах вона перемонтовує кореневий контейнер. Підписка на body
+  // після цього висить на вузлі, якого вже немає в документі, тож apply()
+  // більше не викликається — саме тому номери на плитках дошки не
+  // з'являлись, хоча сама функція працює.
+  new MutationObserver(schedule).observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+
+  // Клік по опису відкриває редактор — відкочуємо СИНХРОННО у фазі
+  // перехоплення, до того як Trello встигне прочитати DOM.
+  document.addEventListener("pointerdown", (event) => {
+    const area = document.querySelector('[data-testid="description-content-area"]');
+    if (area && event.target instanceof Node && area.contains(event.target)) cleanupDescription();
+  }, true);
+
   window.addEventListener("popstate", schedule);
+  window.addEventListener("hashchange", schedule);
+
+  // Страховка на випадок, якщо перемальовування пройде повз спостерігача:
+  // усі рендери ідемпотентні й виходять одразу, якщо працювати нема над чим,
+  // тож секундний інтервал коштує майже нічого.
+  setInterval(schedule, 1000);
+
   schedule();
 })();
