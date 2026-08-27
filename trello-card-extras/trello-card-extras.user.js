@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.18.0
+// @version      1.18.1
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.18.0";
+  const VERSION = "1.18.1";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -368,6 +368,16 @@
     if (!root) return;
 
     root.querySelectorAll("li, p").forEach((node) => {
+      try {
+        renderChecklistItem(node);
+      } catch (error) {
+        console.warn("[card-extras] пункт чекліста", error);
+      }
+    });
+  };
+
+  const renderChecklistItem = (node) => {
+    {
       if (node.getAttribute(MARK) === "task") return;
       if (node.closest("pre, code")) return;
       if (node.closest(`[${MARK}]`)) return;
@@ -399,18 +409,25 @@
       // Префікс «[ ] » НЕ вирізаємо з тексту: редактор піднімає вміст із DOM,
       // і видалений префікс зникав би з опису при першому ж редагуванні.
       // Замість цього ховаємо його в окремий span — відкат за один крок.
+      // Шукаємо саме ТОЙ текстовий вузол, що починається з «[ ]», а не
+      // просто перший: Atlassian розбиває текст пункту на кілька вузлів, і
+      // сліпе взяття першого давало null.match → виняток, який обривав
+      // forEach — оброблявся лише перший пункт списку.
       const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
-      const first = walker.nextNode();
-      if (first) {
-        const raw = first.nodeValue.match(TASK_PREFIX)[0];
-        const rest = first.splitText(raw.length);
-        const hidden = document.createElement("span");
-        hidden.setAttribute(MARK, "raw-prefix");
-        hidden.style.display = "none";
-        first.replaceWith(hidden);
-        hidden.appendChild(first);
-        void rest;
+      let prefixNode = null;
+      let candidate = null;
+      while ((candidate = walker.nextNode())) {
+        if (TASK_PREFIX.test(candidate.nodeValue)) { prefixNode = candidate; break; }
       }
+      if (!prefixNode) return;
+
+      const raw = prefixNode.nodeValue.match(TASK_PREFIX)[0];
+      prefixNode.splitText(raw.length);
+      const hidden = document.createElement("span");
+      hidden.setAttribute(MARK, "raw-prefix");
+      hidden.style.display = "none";
+      prefixNode.replaceWith(hidden);
+      hidden.appendChild(prefixNode);
 
       // Усередині <li> Atlassian-рендерер тримає <p> — блок. Якщо покласти
       // позначку перед ним, вона стане окремим рядком, тож ставимо її
@@ -429,7 +446,7 @@
         node.style.textDecoration = "line-through";
         node.style.textDecorationColor = "currentColor";
       }
-    });
+    }
   };
 
   // ── Цикл ────────────────────────────────────────────────────────────────
