@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.8.0
+// @version      1.10.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -125,7 +125,7 @@
     if (number) {
       const tag = document.createElement("span");
       tag.textContent = `#${number}`;
-      tag.style.cssText = "font-size:12px;font-weight:700;color:rgba(9,30,66,.5)";
+      tag.style.cssText = "font-size:12px;font-weight:700;color:var(--ds-text-subtle,rgba(9,30,66,.5))";
       box.appendChild(tag);
     }
 
@@ -150,7 +150,7 @@
       pill.style.cssText = [
         "font-size:11px", "line-height:18px", "font-weight:600",
         "padding:0 7px", "border-radius:9px",
-        "background:rgba(9,30,66,.08)", "color:#44546f"
+        "background:var(--ds-background-neutral,rgba(9,30,66,.08))", "color:var(--ds-text-subtle,#44546f)"
       ].join(";");
       box.appendChild(pill);
     }
@@ -180,14 +180,16 @@
 
     const header = cells(lines[0]);
     const body = lines.slice(2).filter(isRow).map(cells);
-    const border = "1px solid rgba(9,30,66,.16)";
+    // Кольори — токенами Atlassian: вони самі перемикаються зі світлої теми
+    // на темну. На жорсткому rgba(9,30,66,…) рамки в темній зникали зовсім.
+    const border = "1px solid var(--ds-border-bold,#7d818a)";
 
     const thead = table.createTHead();
     const headRow = thead.insertRow();
     header.forEach((text) => {
       const th = document.createElement("th");
       th.innerHTML = inline(text);
-      th.style.cssText = `border:${border};padding:6px 10px;text-align:left;background:rgba(9,30,66,.06);font-weight:600`;
+      th.style.cssText = `border:${border};padding:6px 10px;text-align:left;background:var(--ds-background-neutral,rgba(9,30,66,.06));font-weight:600`;
       headRow.appendChild(th);
     });
 
@@ -276,7 +278,7 @@
       box.style.cssText = [
         "display:inline-block", "width:1.1em", "margin-right:4px",
         "font-size:15px", "line-height:1",
-        `color:${checked ? "#22a06b" : "#8590a2"}`
+        `color:${checked ? "var(--ds-text-success,#22a06b)" : "var(--ds-text-subtlest,#8590a2)"}`
       ].join(";");
 
       // Прибираємо префікс лише з першого текстового вузла — решта розмітки
@@ -295,9 +297,9 @@
       inlineHost.insertBefore(box, inlineHost.firstChild);
 
       if (checked) {
-        node.style.color = "#626f86";
+        node.style.color = "var(--ds-text-subtlest,#626f86)";
         node.style.textDecoration = "line-through";
-        node.style.textDecorationColor = "rgba(98,111,134,.5)";
+        node.style.textDecorationColor = "currentColor";
       }
     });
   };
@@ -307,28 +309,39 @@
   // одноразового запуску слухаємо зміни й щоразу перевіряємо, чи вже зроблено.
   // ── 5. Номери карток на плитках дошки ───────────────────────────────────
   // Номер уже є в href плитки (/c/<shortLink>/<НОМЕР>-<slug>), тож ні API,
-  // ні здогадок не потрібно. Малюємо накладенням: absolute + pointer-events
-  // none, щоб не зсувати текст назви й не роздувати плитку.
+  // ні здогадок не потрібно.
+  //
+  // Місце — правий НИЖНІЙ кут плитки, у рівень із бейджами. Угорі стояти
+  // не може: там перший рядок назви, і на довгих заголовках номер лягав
+  // просто на текст. Малюємо накладенням (absolute + pointer-events:none),
+  // щоб не зсувати вміст і не робити плитку вищою.
   const renderTileNumbers = () => {
-    document.querySelectorAll('a[data-testid="card-name"]').forEach((tile) => {
+    document.querySelectorAll('li[data-testid="list-card"]').forEach((tile) => {
       if (tile.querySelector(`[${MARK}="tile-number"]`)) return;
 
-      const match = (tile.getAttribute("href") || "").match(/^\/c\/[^/]+\/(\d+)/);
+      const link = tile.querySelector('a[data-testid="card-name"]');
+      const match = (link?.getAttribute("href") || "").match(/^\/c\/[^/]+\/(\d+)/);
       if (!match) return;
 
       if (getComputedStyle(tile).position === "static") tile.style.position = "relative";
+
+      // Якщо в правому нижньому куті сидить аватарка виконавця —
+      // відсуваємо номер ліворуч від неї, а не поверх.
+      const box = tile.getBoundingClientRect();
+      const avatar = [...tile.querySelectorAll('img, [role="img"], [data-testid*="member"]')].find((node) => {
+        const rect = node.getBoundingClientRect();
+        return box.right - rect.right < 16 && box.bottom - rect.bottom < 40 && rect.width > 12;
+      });
 
       const tag = document.createElement("span");
       tag.setAttribute(MARK, "tile-number");
       tag.textContent = match[1];
       tag.style.cssText = [
-        "position:absolute", "top:2px", "right:4px", "z-index:1",
+        "position:absolute", "bottom:6px", `right:${avatar ? 42 : 8}px`, "z-index:1",
         "font-size:11px", "line-height:14px", "font-weight:700",
         "letter-spacing:.02em", "pointer-events:none",
-        "color:rgba(9,30,66,.38)",
-        // обведення світлом: номер лягає поверх тексту назви, і без нього
-        // на довгих заголовках цифри зливаються з літерами
-        "text-shadow:0 0 3px rgba(255,255,255,.9),0 0 3px rgba(255,255,255,.9)"
+        "color:var(--ds-text-subtle,rgba(9,30,66,.45))",
+        "text-shadow:0 0 3px var(--ds-surface,#fff),0 0 3px var(--ds-surface,#fff)"
       ].join(";");
 
       tile.appendChild(tag);
