@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.21.0
+// @version      1.22.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.21.0";
+  const VERSION = "1.22.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -327,6 +327,28 @@
         white-space: nowrap !important;
         overflow: hidden !important;
       }
+      /* Номер у лівому нижньому куті лягав на іконку «спостерігаю» (око) —
+         перший бейдж рядка [data-testid="card-front-badges"]. Виміряно:
+         бейджі починаються за 17px від краю плитки, тризначний номер
+         закінчується на 38px, тож 26px відступу дають ~5px просвіту.
+         Ціна: на плитках із багатьма бейджами рядок частіше переноситься
+         (2 → 7 із 20 у вимірі) — але перенос виглядає охайно, бо відступ
+         діє на ОБИДВА рядки і номер лишається у вільному куті.
+         :has-сторожа лишаємо: якщо номер не намалювався, відступ не потрібен.
+         Бейджі є лише у повністю гідратованих плиток (testid="trello-card");
+         «minimal-card» рядка бейджів не має, і там правило просто не влучає. */
+      li[data-testid="list-card"]:has([${MARK}="tile-number"]) [data-testid="card-front-badges"] {
+        padding-left: 26px;
+      }
+      /* Вирівнювання по центру рядка бейджів: бейдж 24px стоїть із відступом
+         8px від низу, тож центр — на 20px; номер 16px має стояти на bottom:12,
+         інакше «прилипає» до самого низу й випадає з рядка. Правило діє лише
+         на плитках, де рядок бейджів Є: на «голих» (minimal-card і картки без
+         бейджів) номер лишається в кутку на bottom:0 з інлайнового стилю —
+         звідси й !important, бо інлайн інакше переміг би. */
+      li[data-testid="list-card"]:has([data-testid="card-front-badges"]) [${MARK}="tile-number"] {
+        bottom: 12px !important;
+      }
       input[${MARK}="task-box"] {
         margin: 0 6px 0 0;
         vertical-align: -1px;
@@ -450,30 +472,19 @@
 
       if (getComputedStyle(tile).position === "static") tile.style.position = "relative";
 
-      // Правий нижній кут може бути зайнятий аватаркою виконавця. Не
-      // вгадуємо її за класом — міряємо: беремо все, що впритул до правого
-      // краю нижньої смуги й розміром зі значок, і стаємо ЛІВІШЕ.
-      const box = tile.getBoundingClientRect();
-      const blockers = [...tile.querySelectorAll("*")].filter((node) => {
-        const rect = node.getBoundingClientRect();
-        return rect.width >= 14 && rect.width <= 48
-          && rect.height >= 14 && rect.height <= 48
-          && (box.bottom - rect.bottom) < 34
-          && (box.right - rect.right) < 20;
-      });
-      const edge = blockers.reduce((min, node) => Math.min(min, node.getBoundingClientRect().left), Infinity);
-      const right = Number.isFinite(edge) ? Math.round(box.right - edge) + 6 : 8;
-
       const tag = document.createElement("span");
       tag.setAttribute(MARK, "tile-number");
       tag.textContent = match[1];
-      // z-index навмисно великий: плитка створює власний контекст накладання,
-      // і з z-index:1 номер малювався ПІД вмістом картки — його не було видно,
-      // хоча у DOM він був. Заливка потрібна з тієї ж причини, що й у панелі:
-      // сірий текст на темній плитці не читався.
+      // Лівий нижній кут: аватарка виконавця сидить праворуч, і номер під нею
+      // ховався. Ліворуч вільно завжди — там бейджі, які закінчуються раніше.
+      //
+      // z-index обов'язковий: плитка створює власний контекст накладання, і
+      // без нього номер малюється ПІД вмістом картки — у DOM він є, на екрані
+      // немає. Заливка з тієї ж причини, що й у панелі: сірий текст на темній
+      // плитці не читався.
       tag.style.cssText = [
-        "position:absolute", "bottom:6px", `right:${right}px`,
-        "z-index:9999", "pointer-events:none",
+        "position:absolute", "bottom:6px", "left:8px",
+        "z-index:10", "pointer-events:none",
         "font-size:11px", "line-height:16px", "font-weight:700",
         "padding:0 6px", "border-radius:8px",
         "background:var(--ds-background-neutral-bold,#44546f)",
