@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.20.0
+// @version      1.20.1
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.20.0";
+  const VERSION = "1.20.1";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -129,7 +129,9 @@
     // Версія в підказці: щоб побачити, ЯКА збірка працює, достатньо навести
     // мишу на позначки — без консолі й здогадок.
     box.title = `Trello Card Extras v${VERSION}`;
-    box.style.cssText = "display:inline-flex;align-items:center;gap:6px;flex:none";
+    // margin-top: рідна кнопка списку («🚧 In Progress») має свої 4px згори,
+    // тож без цього наші позначки стояли б вище за неї на ті самі 4px.
+    box.style.cssText = "display:inline-flex;align-items:center;gap:6px;flex:none;margin-top:4px";
 
     if (number) {
       const tag = document.createElement("span");
