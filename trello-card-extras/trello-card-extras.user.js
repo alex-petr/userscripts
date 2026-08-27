@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.7.0
+// @version      1.7.1
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки біля назви та на плитках дошки, пріоритет !N із підписом і бейдж Scrum Points
 // @match        https://trello.com/*
@@ -352,7 +352,14 @@
       const first = walker.nextNode();
       if (first) first.nodeValue = first.nodeValue.replace(TASK_PREFIX, "");
 
-      node.insertBefore(box, node.firstChild);
+      // Усередині <li> Atlassian-рендерер тримає <p> — блок. Якщо покласти
+      // позначку перед ним, вона стане окремим рядком, тож ставимо її
+      // ПЕРШИМ ЕЛЕМЕНТОМ саме того абзацу.
+      const inlineHost = node.firstElementChild
+        && getComputedStyle(node.firstElementChild).display === "block"
+        ? node.firstElementChild
+        : node;
+      inlineHost.insertBefore(box, inlineHost.firstChild);
 
       if (checked) {
         node.style.color = "#626f86";
