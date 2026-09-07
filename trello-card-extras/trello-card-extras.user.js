@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.27.0
+// @version      1.28.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.27.0";
+  const VERSION = "1.28.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -102,6 +102,10 @@
     return null;
   };
 
+  // Короткий код картки (/c/<КОД>/…) — з URL, як і номер: він є завжди,
+  // коли картка відкрита, і не залежить від стану рендера Trello.
+  const cardShortLink = () => (location.pathname.match(/^\/c\/([^/?#]+)/) || [])[1] || null;
+
   // ── 2. Пріоритет !N і Scrum Points (N) ──────────────────────────────────
   const parseTitle = (text) => ({
     priority: (text.match(/!([1-5])\b/) || [])[1],
@@ -139,8 +143,32 @@
   const inkFor = (background) =>
     contrast(background, "#ffffff") >= contrast(background, DARK_INK) ? "#fff" : DARK_INK;
 
-  const renderToolbarBadges = ({ number, priority, points }) => {
-    if (!number && !priority && !points) return;
+  // Кнопка копіювання всередині позначки. Клік глушимо в обидва боки:
+  // панель картки ловить кліки, і без stopPropagation Trello відкривав би
+  // свої меню поверх нашого копіювання.
+  const copyButton = (title, text) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute(MARK, "copy");
+    button.textContent = "⧉";
+    button.title = title;
+    // all:unset скидає рідні стилі кнопки — вона успадковує колір і фон
+    // позначки, в якій сидить, тож окремої палітри їй не треба.
+    button.style.cssText = "all:unset;cursor:pointer;margin-left:6px;font-size:12px;line-height:1";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      navigator.clipboard.writeText(text).then(() => {
+        // галочка на мить — єдиний зворотний зв'язок, що копіювання відбулось
+        button.textContent = "✓";
+        setTimeout(() => { button.textContent = "⧉"; }, 800);
+      }).catch((error) => console.warn("[card-extras] буфер", error));
+    });
+    return button;
+  };
+
+  const renderToolbarBadges = ({ number, priority, points, short }) => {
+    if (!number && !priority && !points && !short) return;
 
     const header = [...document.querySelectorAll("header")].find(
       (node) => !node.closest('[data-testid="card-back-sticky-header"]') && node.querySelector("button")
@@ -152,7 +180,7 @@
     // у назві видно одразу, без закриття картки. Порівнюємо підпис, а не
     // просто наявність вузла — інакше рендер виходив би одразу й панель
     // лишалася зі старим пріоритетом.
-    const signature = `${number || ""}|${priority || ""}|${points || ""}`;
+    const signature = `${number || ""}|${priority || ""}|${points || ""}|${short || ""}`;
     const existing = row.querySelector(`[${MARK}="toolbar"]`);
     if (existing) {
       if (existing.dataset.tceSignature === signature) return;
@@ -179,6 +207,9 @@
         "color:var(--ds-text-inverse,#fff)",
         "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
+      // копіюємо голий номер, без «#»: він іде в назви гілок і коміти,
+      // де ґратка лише заважала б
+      tag.appendChild(copyButton("Скопіювати номер картки", number));
       box.appendChild(tag);
     }
 
@@ -209,6 +240,25 @@
         "color:var(--ds-text-inverse,#fff)",
         "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
+      box.appendChild(pill);
+    }
+
+    if (short) {
+      // Видно КОД (він і є суттю короткого посилання), а копіюється повний
+      // URL — голий код нікуди не вставиш, а посилання йде в чати як є.
+      const pill = document.createElement("span");
+      pill.title = "Коротке посилання картки";
+      pill.textContent = short;
+      pill.style.cssText = [
+        // моноширинний: код типу AdYobF5y читається як код, а не як слово
+        "font-family:ui-monospace,SFMono-Regular,Menlo,monospace",
+        "font-size:13px", "line-height:22px", "font-weight:600",
+        "padding:0 9px", "border-radius:11px",
+        "background:var(--ds-background-neutral-bold,#44546f)",
+        "color:var(--ds-text-inverse,#fff)",
+        "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
+      ].join(";");
+      pill.appendChild(copyButton("Скопіювати посилання на картку", `https://trello.com/c/${short}`));
       box.appendChild(pill);
     }
 
@@ -605,7 +655,7 @@
     if (!title) return;
 
     const text = title.value || title.textContent || "";
-    renderToolbarBadges({ number: cardNumber(), ...parseTitle(text) });
+    renderToolbarBadges({ number: cardNumber(), short: cardShortLink(), ...parseTitle(text) });
 
     // Поки опис редагують — нічого не малюємо й прибираємо своє: інакше
     // редактор підніме з DOM наші вставки замість вихідного тексту.
