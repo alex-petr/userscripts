@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.28.0
+// @version      1.29.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.28.0";
+  const VERSION = "1.29.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -143,9 +143,25 @@
   const inkFor = (background) =>
     contrast(background, "#ffffff") >= contrast(background, DARK_INK) ? "#fff" : DARK_INK;
 
-  // Кнопка копіювання всередині позначки. Клік глушимо в обидва боки:
-  // панель картки ловить кліки, і без stopPropagation Trello відкривав би
-  // свої меню поверх нашого копіювання.
+  // Спільна поведінка копіювання. Глушимо не лише click, а й pointerdown і
+  // mousedown: панель картки ловить кліки своїми меню, а плитка дошки на
+  // pointerdown ще й починає перетягування картки — без глушіння спроба
+  // скопіювати номер тягала б картку по дошці.
+  const armCopy = (node, text) => {
+    ["pointerdown", "mousedown"].forEach((type) =>
+      node.addEventListener(type, (event) => { event.preventDefault(); event.stopPropagation(); }));
+    node.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      navigator.clipboard.writeText(text).then(() => {
+        // галочка на мить — єдиний зворотний зв'язок, що копіювання відбулось
+        const label = node.textContent;
+        node.textContent = "✓";
+        setTimeout(() => { node.textContent = label; }, 800);
+      }).catch((error) => console.warn("[card-extras] буфер", error));
+    });
+  };
+
   const copyButton = (title, text) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -155,15 +171,7 @@
     // all:unset скидає рідні стилі кнопки — вона успадковує колір і фон
     // позначки, в якій сидить, тож окремої палітри їй не треба.
     button.style.cssText = "all:unset;cursor:pointer;margin-left:6px;font-size:12px;line-height:1";
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      navigator.clipboard.writeText(text).then(() => {
-        // галочка на мить — єдиний зворотний зв'язок, що копіювання відбулось
-        button.textContent = "✓";
-        setTimeout(() => { button.textContent = "⧉"; }, 800);
-      }).catch((error) => console.warn("[card-extras] буфер", error));
-    });
+    armCopy(button, text);
     return button;
   };
 
@@ -213,6 +221,27 @@
       box.appendChild(tag);
     }
 
+    // Лінк одразу після номера: номер і посилання — головні координати
+    // картки, пріоритет і поінти — вже її властивості.
+    if (short) {
+      // Видно КОД (він і є суттю короткого посилання), а копіюється повний
+      // URL — голий код нікуди не вставиш, а посилання йде в чати як є.
+      const pill = document.createElement("span");
+      pill.title = "Коротке посилання картки";
+      pill.textContent = short;
+      pill.style.cssText = [
+        // моноширинний: код типу AdYobF5y читається як код, а не як слово
+        "font-family:ui-monospace,SFMono-Regular,Menlo,monospace",
+        "font-size:13px", "line-height:22px", "font-weight:600",
+        "padding:0 9px", "border-radius:11px",
+        "background:var(--ds-background-neutral-bold,#44546f)",
+        "color:var(--ds-text-inverse,#fff)",
+        "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
+      ].join(";");
+      pill.appendChild(copyButton("Скопіювати посилання на картку", `https://trello.com/c/${short}`));
+      box.appendChild(pill);
+    }
+
     if (priority) {
       const { color, label } = PRIORITY[priority];
       const chip = document.createElement("span");
@@ -240,25 +269,6 @@
         "color:var(--ds-text-inverse,#fff)",
         "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
-      box.appendChild(pill);
-    }
-
-    if (short) {
-      // Видно КОД (він і є суттю короткого посилання), а копіюється повний
-      // URL — голий код нікуди не вставиш, а посилання йде в чати як є.
-      const pill = document.createElement("span");
-      pill.title = "Коротке посилання картки";
-      pill.textContent = short;
-      pill.style.cssText = [
-        // моноширинний: код типу AdYobF5y читається як код, а не як слово
-        "font-family:ui-monospace,SFMono-Regular,Menlo,monospace",
-        "font-size:13px", "line-height:22px", "font-weight:600",
-        "padding:0 9px", "border-radius:11px",
-        "background:var(--ds-background-neutral-bold,#44546f)",
-        "color:var(--ds-text-inverse,#fff)",
-        "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
-      ].join(";");
-      pill.appendChild(copyButton("Скопіювати посилання на картку", `https://trello.com/c/${short}`));
       box.appendChild(pill);
     }
 
@@ -432,7 +442,7 @@
          на плитках, де рядок бейджів Є: на «голих» (minimal-card і картки без
          бейджів) номер лишається в кутку на bottom:0 з інлайнового стилю —
          звідси й !important, бо інлайн інакше переміг би. */
-      li[data-testid="list-card"]:has([data-testid="card-front-badges"]) [${MARK}="tile-number"] {
+      li[data-testid="list-card"]:has([data-testid="card-front-badges"]) [${MARK}="tile-tools"] {
         bottom: 12px !important;
       }
       input[${MARK}="task-box"] {
@@ -554,35 +564,45 @@
   // Номер уже є в href плитки (/c/<shortLink>/<НОМЕР>-<slug>), тож ні API,
   // ні здогадок не потрібно.
   //
-  // Місце — правий НИЖНІЙ кут плитки, у рівень із бейджами. Угорі стояти
+  // Місце — лівий нижній кут плитки, у рівень із бейджами. Угорі стояти
   // не може: там перший рядок назви, і на довгих заголовках номер лягав
-  // просто на текст. Малюємо накладенням (absolute + pointer-events:none),
-  // щоб не зсувати вміст і не робити плитку вищою.
+  // просто на текст. Малюємо накладенням (absolute), щоб не зсувати вміст
+  // і не робити плитку вищою. Сам номер клікабельний і копіює себе, іконка
+  // поруч копіює коротке посилання; глушіння подій — в armCopy, інакше
+  // клік відкривав би картку, а pointerdown починав її тягати.
   const renderTileNumbers = () => {
     document.querySelectorAll('li[data-testid="list-card"]').forEach((tile) => {
       if (tile.querySelector(`[${MARK}="tile-number"]`)) return;
 
       const link = tile.querySelector('a[data-testid="card-name"]');
-      const match = (link?.getAttribute("href") || "").match(/^\/c\/[^/]+\/(\d+)/);
+      const match = (link?.getAttribute("href") || "").match(/^\/c\/([^/]+)\/(\d+)/);
       if (!match) return;
+      const [, short, number] = match;
 
       if (getComputedStyle(tile).position === "static") tile.style.position = "relative";
 
-      const tag = document.createElement("span");
-      tag.setAttribute(MARK, "tile-number");
-      tag.textContent = match[1];
-      // Лівий нижній кут: аватарка виконавця сидить праворуч, і номер під нею
-      // ховався. Ліворуч вільно завжди — там бейджі, які закінчуються раніше.
+      // Обидві позначки живуть в одному flex-контейнері: ширина номера
+      // залежить від кількості цифр, і позиціонувати іконку окремо означало б
+      // рахувати її вручну. Контейнер прозорий для мишки (pointer-events:none),
+      // клікабельні лише самі позначки — проміжки пропускають клік до плитки.
       //
       // z-index обов'язковий: плитка створює власний контекст накладання, і
       // без нього номер малюється ПІД вмістом картки — у DOM він є, на екрані
       // немає. Беремо із запасом: 10 вистачає сьогодні, але Trello додає
       // шари з кожним релізом, і мовчазне зникнення номера ми вже проходили.
-      // Заливка з тієї ж причини, що й у панелі: сірий текст на темній
-      // плитці не читався.
-      tag.style.cssText = [
+      const tools = document.createElement("span");
+      tools.setAttribute(MARK, "tile-tools");
+      tools.style.cssText = [
         "position:absolute", "bottom:0", "left:8px",
         "z-index:9999", "pointer-events:none",
+        "display:inline-flex", "align-items:center", "gap:4px"
+      ].join(";");
+
+      // Заливка з тієї ж причини, що й у панелі: сірий текст на темній
+      // плитці не читався. Лівий нижній кут: аватарка виконавця сидить
+      // праворуч, і номер під нею ховався; ліворуч вільно завжди.
+      const pillCss = [
+        "pointer-events:auto", "cursor:pointer",
         "font-size:11px", "line-height:16px", "font-weight:700",
         "padding:0 6px", "border-radius:8px",
         "background:var(--ds-background-neutral-bold,#44546f)",
@@ -590,7 +610,22 @@
         "box-shadow:0 0 0 1px rgba(9,30,66,.35)"
       ].join(";");
 
-      tile.appendChild(tag);
+      const tag = document.createElement("span");
+      tag.setAttribute(MARK, "tile-number");
+      tag.textContent = number;
+      tag.title = "Скопіювати номер картки";
+      tag.style.cssText = pillCss;
+      armCopy(tag, number);
+
+      const linkTag = document.createElement("span");
+      linkTag.setAttribute(MARK, "tile-link");
+      linkTag.textContent = "⧉";
+      linkTag.title = "Скопіювати посилання на картку";
+      linkTag.style.cssText = pillCss;
+      armCopy(linkTag, `https://trello.com/c/${short}`);
+
+      tools.append(tag, linkTag);
+      tile.appendChild(tools);
     });
   };
 
