@@ -29,6 +29,15 @@ card title. Works in light and dark themes.
 карток на плитках дошки, значки пріоритету та story points із назви картки.
 Світла й темна теми.
 
+### [ytmusic-nowplaying-title](ytmusic-nowplaying-title/)
+
+Keeps "Track • Artist | YouTube Music" in the tab title on every page — the
+native title shows the track without the artist, and only while playing.
+
+Тримає «Трек • Виконавець | YouTube Music» у заголовку вкладки на будь-якій
+сторінці — рідний титул показує трек без виконавця, і то лише під час
+відтворення.
+
 ---
 
 ## Install / Встановлення
