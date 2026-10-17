@@ -19,7 +19,7 @@ the link, so the extra click disappears.
 Обирає найвищу доступну якість на сторінці вибору роздачі й переходить за
 посиланням — зайвий клік зникає.
 
-### [trello-card-extras](trello-card-extras/)
+### [extras-for-trello](extras-for-trello/)
 
 Makes Trello cards readable: markdown tables and task lists in descriptions,
 card numbers on board tiles, priority and story-point badges parsed from the

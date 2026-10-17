@@ -1,21 +1,21 @@
 // ==UserScript==
-// @name         Trello Card Extras — таблиці, номер картки, пріоритет
+// @name         Extras for Trello — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.30.0
+// @version      1.30.1
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
 // @run-at       document-idle
 // @grant        none
 // @homepageURL  https://github.com/alex-petr/userscripts
-// @downloadURL  https://raw.githubusercontent.com/alex-petr/userscripts/main/trello-card-extras/trello-card-extras.user.js
-// @updateURL    https://raw.githubusercontent.com/alex-petr/userscripts/main/trello-card-extras/trello-card-extras.user.js
+// @downloadURL  https://raw.githubusercontent.com/alex-petr/userscripts/main/extras-for-trello/extras-for-trello.user.js
+// @updateURL    https://raw.githubusercontent.com/alex-petr/userscripts/main/extras-for-trello/extras-for-trello.user.js
 // ==/UserScript==
 
 (() => {
   "use strict";
 
-  const VERSION = "1.30.0";
+  const VERSION = "1.30.1";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -27,7 +27,7 @@
     5: { color: "#50bafb", label: "Lowest" }
   };
 
-  const MARK = "data-tce"; // мітка обробленого вузла — захист від повторного проходу
+  const MARK = "data-eft"; // мітка обробленого вузла — захист від повторного проходу
 
   // ── Пошук вузлів ────────────────────────────────────────────────────────
   // Trello регулярно перейменовує класи, тож кожен селектор — список
@@ -158,7 +158,7 @@
         const label = node.textContent;
         node.textContent = "✓";
         setTimeout(() => { node.textContent = label; }, 800);
-      }).catch((error) => console.warn("[card-extras] буфер", error));
+      }).catch((error) => console.warn("[eft] буфер", error));
     });
   };
 
@@ -191,16 +191,16 @@
     const signature = `${number || ""}|${priority || ""}|${points || ""}|${short || ""}`;
     const existing = row.querySelector(`[${MARK}="toolbar"]`);
     if (existing) {
-      if (existing.dataset.tceSignature === signature) return;
+      if (existing.dataset.eftSignature === signature) return;
       existing.remove();
     }
 
     const box = document.createElement("span");
     box.setAttribute(MARK, "toolbar");
-    box.dataset.tceSignature = signature;
+    box.dataset.eftSignature = signature;
     // Версія в підказці: щоб побачити, ЯКА збірка працює, достатньо навести
     // мишу на позначки — без консолі й здогадок.
-    box.title = `Trello Card Extras v${VERSION}`;
+    box.title = `Extras for Trello v${VERSION}`;
     // margin-top: рідна кнопка списку («🚧 In Progress») має свої 4px згори,
     // тож без цього наші позначки стояли б вище за неї на ті самі 4px.
     box.style.cssText = "display:inline-flex;align-items:center;gap:6px;flex:none;margin-top:4px";
@@ -365,7 +365,7 @@
       if (after) wrap.appendChild(textBlock(after));
 
       node.setAttribute(MARK, "hidden-source");
-      node.dataset.cardExtrasDisplay = node.style.display || "";
+      node.dataset.eftDisplay = node.style.display || "";
       node.style.display = "none";
       node.after(wrap);
     });
@@ -381,10 +381,10 @@
   // Маркер списку малюється або ::marker, або ::before — інлайновим style
   // до них не дістатись, тож кладемо правила окремим <style> один раз.
   const ensureStyles = () => {
-    if (document.getElementById("card-extras-style")) return;
+    if (document.getElementById("eft-style")) return;
 
     const style = document.createElement("style");
-    style.id = "card-extras-style";
+    style.id = "eft-style";
     // Версія в DOM: єдиний спосіб з консолі перевірити, ЯКА саме збірка
     // зараз виконується — Tampermonkey цього не показує сторінці.
     style.dataset.version = VERSION;
@@ -456,7 +456,7 @@
          повернення вже не відновлював — стан ламався до перезавантаження. */
       [data-testid="board-canvas"] { margin-bottom: 0 !important; }
       #board { padding-bottom: 16px !important; }
-      html[data-tce-board-nav="hidden"] #island-nav { visibility: hidden !important; }
+      html[data-eft-board-nav="hidden"] #island-nav { visibility: hidden !important; }
       /* Відкрита картка має власний острівець (Power-ups / Automations /
          Comments) — єдиний <nav> у діалозі, без id і testid; лежить поверх
          низу картки. Тут, навпаки, потрібен display:none: острівець стоїть
@@ -464,16 +464,16 @@
          visibility він вилазив за вікно — шар картки отримував прокрутку
          на 46px. Цикли «сховати/показати» виміряно: повертається на місце.
          Перемикач у картки власний, незалежний від дошкового. */
-      html[data-tce-card-nav="hidden"] [role="dialog"] nav { display: none !important; }
+      html[data-eft-card-nav="hidden"] [role="dialog"] nav { display: none !important; }
       /* Висоту картки Trello обмежує calc(100dvh - 128px): 48px згори і
          80px знизу під острівець. Коли його сховано, віддаємо картці місце
          до ручки — 48px згори, 16px знизу, — а нижній відступ обгортки
          стискаємо з 48 до тих самих 16px, інакше шар картки прокручувався б.
          Вузол із max-height не має ні класу, ні testid — лише структура. */
-      html[data-tce-card-nav="hidden"] [role="dialog"][data-testid="card-back-name"] > div > div > div {
+      html[data-eft-card-nav="hidden"] [role="dialog"][data-testid="card-back-name"] > div > div > div {
         max-height: calc(100dvh - 64px) !important;
       }
-      html[data-tce-card-nav="hidden"] div:has(> div > [role="dialog"][data-testid="card-back-name"]) {
+      html[data-eft-card-nav="hidden"] div:has(> div > [role="dialog"][data-testid="card-back-name"]) {
         margin-bottom: 16px !important;
       }
       /* Ручки по центру нижнього краю: стоять у 16-піксельному зазорі під
@@ -518,7 +518,7 @@
       try {
         renderChecklistItem(node);
       } catch (error) {
-        console.warn("[card-extras] пункт чекліста", error);
+        console.warn("[eft] пункт чекліста", error);
       }
     });
   };
@@ -707,7 +707,7 @@
   ];
 
   const syncNavToggle = (button, { name, what }) => {
-    const hidden = document.documentElement.getAttribute(`data-tce-${name}-nav`) === "hidden";
+    const hidden = document.documentElement.getAttribute(`data-eft-${name}-nav`) === "hidden";
     const label = hidden ? "▴" : "▾";
     // Порівнюємо перед записом: textContent породжує childList-мутацію навіть
     // для того самого значення, а спостерігач на кожну мутацію запускає
@@ -720,8 +720,8 @@
 
   const renderNavToggle = (toggle) => {
     const root = document.documentElement;
-    const attr = `data-tce-${toggle.name}-nav`;
-    const key = `tce-${toggle.name}-nav`;
+    const attr = `data-eft-${toggle.name}-nav`;
+    const key = `eft-${toggle.name}-nav`;
     if (!root.hasAttribute(attr)) {
       let stored = null;
       try { stored = localStorage.getItem(key); } catch { /* сховище недоступне */ }
@@ -763,8 +763,8 @@
     document.querySelectorAll(`[${MARK}="table-wrap"]`).forEach((node) => node.remove());
 
     document.querySelectorAll(`[${MARK}="hidden-source"]`).forEach((node) => {
-      node.style.display = node.dataset.cardExtrasDisplay || "";
-      delete node.dataset.cardExtrasDisplay;
+      node.style.display = node.dataset.eftDisplay || "";
+      delete node.dataset.eftDisplay;
       node.removeAttribute(MARK);
     });
 
@@ -834,7 +834,7 @@
   const run = () => {
     if (!scheduled) return;
     scheduled = false;
-    try { apply(); } catch (error) { console.warn("[card-extras]", error); }
+    try { apply(); } catch (error) { console.warn("[eft]", error); }
   };
 
   const schedule = () => {
@@ -861,7 +861,7 @@
   };
 
   const run2 = () => {
-    try { apply(); } catch (error) { console.warn("[card-extras]", error); }
+    try { apply(); } catch (error) { console.warn("[eft]", error); }
   };
 
   // Спостерігати треба за <html>, а не за <body>: Trello — SPA, і при

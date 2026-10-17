@@ -1,4 +1,4 @@
-# Trello Card Extras
+# Extras for Trello
 
 Робить картки Trello читабельними: markdown-таблиці та чеклісти в описі, номери
 карток на плитках дошки, значки пріоритету й story points із назви картки.
@@ -37,7 +37,7 @@
 тим, що скрипт повідомляє про себе на сторінці:
 
 ```js
-document.getElementById('card-extras-style')?.dataset.version
+document.getElementById('eft-style')?.dataset.version
 ```
 
 Версія також у підказці при наведенні на значки в шапці картки. CI падає, якщо
@@ -45,5 +45,5 @@ document.getElementById('card-extras-style')?.dataset.version
 
 ## Встановлення
 
-Відкрити [`trello-card-extras.user.js`](trello-card-extras.user.js) у режимі
+Відкрити [`extras-for-trello.user.js`](extras-for-trello.user.js) у режимі
 Raw — менеджер запропонує встановити. Оновлення приходять самі.
