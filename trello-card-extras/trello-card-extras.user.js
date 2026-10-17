@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Trello Card Extras — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.29.0
+// @version      1.30.0
 // @author       Oleksandr Petrov
 // @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.29.0";
+  const VERSION = "1.30.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -445,6 +445,55 @@
       li[data-testid="list-card"]:has([data-testid="card-front-badges"]) [${MARK}="tile-tools"] {
         bottom: 12px !important;
       }
+      /* Нижній острівець Trello (Inbox / Planner / Board / Switch boards).
+         Trello резервує під нього ~134px порожнечі: канва margin-bottom:62px,
+         #board padding-bottom:72px — через хешовані класи-стани. Резерв
+         знімаємо ЗАВЖДИ, а острівець лише ховаємо/показуємо поверх списків:
+         висота колонок однакова в обох станах, і перемикання нічого не
+         зсуває. 16px знизу — під нашу ручку, щоб вона не лягала на списки.
+         Ховаємо через visibility, НЕ display: Trello стежить за розміром
+         острівця, і після display:none знімав свої класи-резерви, а після
+         повернення вже не відновлював — стан ламався до перезавантаження. */
+      [data-testid="board-canvas"] { margin-bottom: 0 !important; }
+      #board { padding-bottom: 16px !important; }
+      html[data-tce-board-nav="hidden"] #island-nav { visibility: hidden !important; }
+      /* Відкрита картка має власний острівець (Power-ups / Automations /
+         Comments) — єдиний <nav> у діалозі, без id і testid; лежить поверх
+         низу картки. Тут, навпаки, потрібен display:none: острівець стоїть
+         під нижнім краєм діалогу, і коли картка росте, схований через
+         visibility він вилазив за вікно — шар картки отримував прокрутку
+         на 46px. Цикли «сховати/показати» виміряно: повертається на місце.
+         Перемикач у картки власний, незалежний від дошкового. */
+      html[data-tce-card-nav="hidden"] [role="dialog"] nav { display: none !important; }
+      /* Висоту картки Trello обмежує calc(100dvh - 128px): 48px згори і
+         80px знизу під острівець. Коли його сховано, віддаємо картці місце
+         до ручки — 48px згори, 16px знизу, — а нижній відступ обгортки
+         стискаємо з 48 до тих самих 16px, інакше шар картки прокручувався б.
+         Вузол із max-height не має ні класу, ні testid — лише структура. */
+      html[data-tce-card-nav="hidden"] [role="dialog"][data-testid="card-back-name"] > div > div > div {
+        max-height: calc(100dvh - 64px) !important;
+      }
+      html[data-tce-card-nav="hidden"] div:has(> div > [role="dialog"][data-testid="card-back-name"]) {
+        margin-bottom: 16px !important;
+      }
+      /* Ручки по центру нижнього краю: стоять у 16-піксельному зазорі під
+         острівцем, тож не перекривають ні його, ні списки в жодному стані.
+         Обидві займають одне місце, але видно лише одну — за контекстом.
+         z-index великий, бо шар відкритої картки має z-index:20 — нижче
+         ручка опинялась під затемненням, і клікнути її було неможливо. */
+      button[${MARK}$="nav-toggle"] {
+        position: fixed; left: 50%; bottom: 0; transform: translateX(-50%);
+        z-index: 9999; width: 48px; height: 14px; margin: 0; padding: 0;
+        border: 0; border-radius: 8px 8px 0 0; cursor: pointer;
+        font: 10px/14px system-ui, sans-serif;
+        background: var(--ds-surface-overlay, #fff);
+        color: var(--ds-text-subtle, #44546f);
+        box-shadow: 0 0 0 1px var(--ds-border, rgba(9,30,66,.25));
+        opacity: .75;
+      }
+      button[${MARK}$="nav-toggle"]:hover { opacity: 1; }
+      /* стилі кнопок Trello можуть перебити рідне [hidden] */
+      button[${MARK}$="nav-toggle"][hidden] { display: none !important; }
       input[${MARK}="task-box"] {
         margin: 0 6px 0 0;
         vertical-align: -1px;
@@ -637,6 +686,76 @@
     });
   };
 
+  // ── 6. Ручки ховання нижніх острівців Trello ────────────────────────────
+  // Два НЕЗАЛЕЖНІ перемикачі: панель дошки й панель картки ховаються
+  // окремо, кожна зі своїм станом. Стан — атрибут на <html>, від якого
+  // відштовхується CSS, і ключ у localStorage: ховати панель після кожного
+  // перезавантаження набридло б так само, як сама панель. Доступ до сховища
+  // загорнутий у try — у приватному режимі він кидає виняток.
+  const cardNavPresent = () => Boolean(document.querySelector('[role="dialog"] nav'));
+
+  const NAV_TOGGLES = [
+    {
+      name: "board",
+      what: "нижню панель дошки: Inbox · Planner · Board · Switch boards",
+      // Під відкритою карткою острівець дошки затемнений і недоступний, а
+      // обидві ручки стоять в одній точці — тож дошкову ховаємо, поки
+      // відкрита картка.
+      present: () => Boolean(document.getElementById("island-nav")) && !cardNavPresent()
+    },
+    { name: "card", what: "нижню панель картки: Power-ups · Automations · Comments", present: cardNavPresent }
+  ];
+
+  const syncNavToggle = (button, { name, what }) => {
+    const hidden = document.documentElement.getAttribute(`data-tce-${name}-nav`) === "hidden";
+    const label = hidden ? "▴" : "▾";
+    // Порівнюємо перед записом: textContent породжує childList-мутацію навіть
+    // для того самого значення, а спостерігач на кожну мутацію запускає
+    // apply() — вийшов би нескінченний цикл.
+    if (button.textContent !== label) button.textContent = label;
+    button.title = `${hidden ? "Показати" : "Сховати"} ${what}`;
+    button.setAttribute("aria-label", button.title);
+    button.setAttribute("aria-pressed", String(hidden));
+  };
+
+  const renderNavToggle = (toggle) => {
+    const root = document.documentElement;
+    const attr = `data-tce-${toggle.name}-nav`;
+    const key = `tce-${toggle.name}-nav`;
+    if (!root.hasAttribute(attr)) {
+      let stored = null;
+      try { stored = localStorage.getItem(key); } catch { /* сховище недоступне */ }
+      root.setAttribute(attr, stored === "hidden" ? "hidden" : "shown");
+    }
+
+    let button = document.querySelector(`button[${MARK}="${toggle.name}-nav-toggle"]`);
+    if (!toggle.present()) {
+      if (button) button.hidden = true;
+      return;
+    }
+
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute(MARK, `${toggle.name}-nav-toggle`);
+      // Ручка лежить поза діалогом картки, а натискання поза модальним
+      // вікном Trello вважає наміром його закрити — глушимо до того, як
+      // подія дійде до сторінки.
+      ["pointerdown", "mousedown"].forEach((type) =>
+        button.addEventListener(type, (event) => { event.preventDefault(); event.stopPropagation(); }));
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const next = root.getAttribute(attr) === "hidden" ? "shown" : "hidden";
+        root.setAttribute(attr, next);
+        try { localStorage.setItem(key, next); } catch { /* лише в цій сесії */ }
+        syncNavToggle(button, toggle);
+      });
+      document.body.appendChild(button);
+    }
+    button.hidden = false;
+    syncNavToggle(button, toggle);
+  };
+
   // ── Відкат: повертаємо опис до вихідного стану ──────────────────────────
   // Викликається перед будь-яким редагуванням. Усі наші зміни оборотні:
   // оригінальні вузли лише сховані, префікси загорнуті, вставлене — наше.
@@ -685,6 +804,7 @@
     // не малювались узагалі.
     renderTileNumbers();
     renderListTitles();
+    NAV_TOGGLES.forEach(renderNavToggle);
 
     const title = cardBackTitle();
     if (!title) return;
