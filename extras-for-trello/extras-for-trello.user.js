@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Extras for Trello — таблиці, номер картки, пріоритет
 // @namespace    https://github.com/alex-petr/userscripts
-// @version      1.30.1
+// @version      1.31.0
 // @author       Oleksandr Petrov
-// @description  Markdown-таблиці й чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
+// @description  Markdown-таблиці в описі й коментарях, чеклісти в описі, номер картки в панелі картки та на плитках дошки, пріоритет !N із підписом і Scrum Points
 // @match        https://trello.com/*
 // @run-at       document-idle
 // @grant        none
@@ -15,7 +15,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "1.30.1";
+  const VERSION = "1.31.0";
 
   // Кольори — ті самі, що в Strelloids, щоб полоска у відкритій картці
   // збігалася зі списком і око не перемикалося між двома шкалами.
@@ -338,6 +338,10 @@
 
     root.querySelectorAll("p, div.ak-renderer-document > div").forEach((node) => {
       if (node.getAttribute(MARK)) return;
+      // textContent не перераховує розкладку, а innerText — так. Коментарів
+      // на картці десятки, і цикл проходить їх щосекунди, тож без цього
+      // дешевого відсіву кожен прохід змушував би браузер верстати сторінку.
+      if (!(node.textContent || "").includes("|")) return;
       if (node.closest("pre, code, table")) return;
 
       const lines = (node.innerText || "").split("\n");
@@ -361,7 +365,12 @@
       wrap.setAttribute(MARK, "table-wrap");
       wrap.setAttribute("contenteditable", "false");
       if (before) wrap.appendChild(textBlock(before));
-      wrap.appendChild(table);
+      // Гортається лише таблиця, а не вся обгортка: інакше смуга прокрутки
+      // опинялась би під текстом, що йде після таблиці.
+      const scroll = document.createElement("div");
+      scroll.setAttribute(MARK, "table-scroll");
+      scroll.appendChild(table);
+      wrap.appendChild(scroll);
       if (after) wrap.appendChild(textBlock(after));
 
       node.setAttribute(MARK, "hidden-source");
@@ -494,6 +503,19 @@
       button[${MARK}$="nav-toggle"]:hover { opacity: 1; }
       /* стилі кнопок Trello можуть перебити рідне [hidden] */
       button[${MARK}$="nav-toggle"][hidden] { display: none !important; }
+      /* І опис, і коментар задають word-break:break-word, а таблиця його
+         успадковувала: мінімальна ширина колонки ставала в одну літеру, і
+         слова ламались навпіл — «Бул|о», «06.06.202|6» в описі, «Стей|дж»
+         у вузькій колонці коментаря. Повертаємо перенос по словах; таблиця
+         лишається на всю ширину, а якщо слова в неї не влазять — стає
+         ширшою за колонку й гортається у власній обгортці, а не ламає їх.
+         Відступи клітинок не стискаємо: у коментарі це дало б лише 20px
+         зі 124 виміряних. */
+      [${MARK}="table-scroll"] { overflow-x: auto; }
+      table[${MARK}="table"] :is(th, td) {
+        word-break: normal;
+        overflow-wrap: normal;
+      }
       input[${MARK}="task-box"] {
         margin: 0 6px 0 0;
         vertical-align: -1px;
@@ -756,32 +778,50 @@
     syncNavToggle(button, toggle);
   };
 
+  // ── 7. Markdown-таблиці в коментарях ────────────────────────────────────
+  // Коментар рендерить той самий рендерер Atlassian, що й опис: таблиця
+  // лежить в одному <p> із рядками через <br>, тож renderTables підходить
+  // без змін. Виміряно на редагуванні: редактор коментаря бере вихідний
+  // markdown, а не DOM (наших вставок у ньому не було), а після «Discard»
+  // React монтує рендерер начисто — цикл просто малює таблицю наново.
+  const COMMENT = '[data-testid="comment-container"]';
+
+  const renderCommentTables = () => {
+    document.querySelectorAll(`${COMMENT} .ak-renderer-document`).forEach(renderTables);
+  };
+
   // ── Відкат: повертаємо опис до вихідного стану ──────────────────────────
   // Викликається перед будь-яким редагуванням. Усі наші зміни оборотні:
   // оригінальні вузли лише сховані, префікси загорнуті, вставлене — наше.
-  const cleanupDescription = () => {
-    document.querySelectorAll(`[${MARK}="table-wrap"]`).forEach((node) => node.remove());
+  // Коментарі не чіпаємо: відкат спрацьовує на будь-який відкритий
+  // редактор, зокрема поле нового коментаря, і таблиці в коментарях
+  // зникали б саме тоді, коли їх читаєш, щоб відповісти.
+  const inDescriptionScope = (selector) =>
+    [...document.querySelectorAll(selector)].filter((node) => !node.closest(COMMENT));
 
-    document.querySelectorAll(`[${MARK}="hidden-source"]`).forEach((node) => {
+  const cleanupDescription = () => {
+    inDescriptionScope(`[${MARK}="table-wrap"]`).forEach((node) => node.remove());
+
+    inDescriptionScope(`[${MARK}="hidden-source"]`).forEach((node) => {
       node.style.display = node.dataset.eftDisplay || "";
       delete node.dataset.eftDisplay;
       node.removeAttribute(MARK);
     });
 
-    document.querySelectorAll(`input[${MARK}="task-box"]`).forEach((node) => {
+    inDescriptionScope(`input[${MARK}="task-box"]`).forEach((node) => {
       // разом із чекбоксом прибираємо доданий пробіл
       const next = node.nextSibling;
       if (next && next.nodeType === Node.TEXT_NODE && next.nodeValue === " ") next.remove();
       node.remove();
     });
 
-    document.querySelectorAll(`[${MARK}="raw-prefix"]`).forEach((node) => {
+    inDescriptionScope(`[${MARK}="raw-prefix"]`).forEach((node) => {
       node.replaceWith(...node.childNodes);
     });
 
-    document.querySelectorAll(`[${MARK}="task-list"]`).forEach((node) => node.removeAttribute(MARK));
+    inDescriptionScope(`[${MARK}="task-list"]`).forEach((node) => node.removeAttribute(MARK));
 
-    document.querySelectorAll(`[${MARK}="task"]`).forEach((node) => {
+    inDescriptionScope(`[${MARK}="task"]`).forEach((node) => {
       node.style.listStyle = "";
       node.style.color = "";
       node.style.textDecoration = "";
@@ -811,6 +851,9 @@
 
     const text = title.value || title.textContent || "";
     renderToolbarBadges({ number: cardNumber(), short: cardShortLink(), ...parseTitle(text) });
+
+    // До перевірки редагування опису: коментарі від неї не залежать
+    renderCommentTables();
 
     // Поки опис редагують — нічого не малюємо й прибираємо своє: інакше
     // редактор підніме з DOM наші вставки замість вихідного тексту.
